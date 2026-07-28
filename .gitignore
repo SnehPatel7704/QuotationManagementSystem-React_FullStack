@@ -1,0 +1,9 @@
+*/.env
+*/*.log
+*.log
+*.pid
+/frontend/build
+/backend/node_modules
+/frontend/node_modules
+
+Mini_Project_Synopsis.pdf

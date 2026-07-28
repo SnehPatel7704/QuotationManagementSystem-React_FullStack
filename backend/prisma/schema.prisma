@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique @db.VarChar(50)
+  password  String   @db.VarChar(255)
+  email     String   @db.VarChar(100)
+  role      UserRole @default(USER)
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  createdQuotations  Quotation[] @relation("QuotationCreator")
+  approvedQuotations Quotation[] @relation("QuotationApprover")
+
+  @@map("users")
+}
+
+enum UserRole {
+  SUPERADMIN
+  ADMIN
+  USER
+}
+
+model Company {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  email     String?  @db.VarChar(100)
+  phone     String?  @db.VarChar(20)
+  address   String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  quotations Quotation[]
+
+  @@map("companies")
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  basePrice   Decimal  @map("base_price") @db.Decimal(10, 2)
+  category    String?  @db.VarChar(50)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  quotationItems QuotationItem[]
+
+  @@map("products")
+}
+
+model Quotation {
+  id                Int             @id @default(autoincrement())
+  quotationNumber   String          @map("quotation_number") @db.VarChar(50)
+  companyId         Int             @map("company_id")
+  templateId        Int?            @map("template_id")
+  status            QuotationStatus @default(DRAFT)
+  totalAmount       Decimal         @map("total_amount") @db.Decimal(12, 2)
+  createdBy         Int             @map("created_by")
+  approvedBy        Int?            @map("approved_by")
+  followUpDate      DateTime?       @map("follow_up_date") @db.Date
+  rejectionReason   String?         @map("rejection_reason") @db.Text
+  revisionNumber    Int             @default(1) @map("revision_number")
+  parentQuotationId Int?            @map("parent_quotation_id")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  company          Company         @relation(fields: [companyId], references: [id])
+  creator          User            @relation("QuotationCreator", fields: [createdBy], references: [id])
+  approver         User?           @relation("QuotationApprover", fields: [approvedBy], references: [id])
+  parentQuotation  Quotation?      @relation("QuotationRevisions", fields: [parentQuotationId], references: [id], onDelete: SetNull)
+  revisions        Quotation[]     @relation("QuotationRevisions")
+  items            QuotationItem[]
+
+  @@index([companyId])
+  @@index([createdBy])
+  @@index([approvedBy])
+  @@index([parentQuotationId])
+  @@index([followUpDate])
+  @@index([status])
+  @@map("quotations")
+}
+
+enum QuotationStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  REJECTED
+}
+
+model QuotationItem {
+  id          Int     @id @default(autoincrement())
+  quotationId Int     @map("quotation_id")
+  productId   Int     @map("product_id")
+  quantity    Int
+  unitPrice   Decimal @map("unit_price") @db.Decimal(10, 2)
+  totalPrice  Decimal @map("total_price") @db.Decimal(10, 2)
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@index([quotationId])
+  @@index([productId])
+  @@map("quotation_items")
+}
