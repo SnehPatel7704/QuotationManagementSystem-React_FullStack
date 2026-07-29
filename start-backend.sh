@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Load environment variables from .env file
-if [ -f .env ]; then
-    export $(cat .env | grep -v '^#' | xargs)
+# Load environment variables from backend/.env file if it exists
+if [ -f backend/.env ]; then
+    export $(cat backend/.env | grep -v '^#' | xargs)
 fi
 
-# Start the Spring Boot application
-./mvnw spring-boot:run
+echo "🚀 Starting backend server..."
+cd backend && npm run dev
