@@ -6,37 +6,69 @@ A full-stack quotation management system with role-based access control, built w
 
 ### Step 1: Run the setup script (first time only)
 This will install dependencies in both the backend and frontend folders and generate the Prisma Client.
-```bash
-./setup.sh
-```
 
-### Step 2: Database Configuration
-Configure your MySQL database connection string in the backend directory.
-Copy the environment template if it does not exist, or edit the existing `backend/.env` file:
+- **macOS / Linux:**
+  ```bash
+  ./setup.sh
+  ```
+- **Windows:**
+  ```cmd
+  setup.bat
+  ```
+
+### Step 2: Configure Environment Variables
+Copy the environment templates to create the `.env` files and edit them as needed.
+
+- **macOS / Linux:**
+  ```bash
+  cp backend/.env.example backend/.env
+  cp frontend/.env.example frontend/.env
+  ```
+- **Windows:**
+  ```cmd
+  copy backend\.env.example backend\.env
+  copy frontend\.env.example frontend\.env
+  ```
+
+Configure your MySQL database connection string in `backend/.env`:
 ```env
 DATABASE_URL="mysql://username:password@localhost:3306/quotation_db"
-JWT_SECRET="your-jwt-secret-key"
+JWT_SECRET="your-jwt-secret-key-change-in-production"
 PORT=8080
 ```
 
 ### Step 3: Setup the Database Schema & Seed Data
 Ensure MySQL is running and the database specified in your connection string is created (or will be auto-created by Prisma). Then run:
+
 ```bash
 cd backend
 npm run prisma:push
 npm run prisma:seed
+cd ..
 ```
 
 ### Step 4: Start the application
 Run the start-all script from the root directory to launch both servers simultaneously:
-```bash
-./start-all.sh
-```
+
+- **macOS / Linux:**
+  ```bash
+  ./start-all.sh
+  ```
+- **Windows:**
+  ```cmd
+  start-all.bat
+  ```
+
 Alternatively, you can run them separately in different terminals:
-- **Backend**: `./start-backend.sh` (Runs backend on `http://localhost:8080`)
-- **Frontend**: `./start-frontend.sh` (Runs frontend on `http://localhost:3000`)
+- **Backend:**
+  - macOS/Linux: `./start-backend.sh`
+  - Windows: `start-backend.bat`
+- **Frontend:**
+  - macOS/Linux: `./start-frontend.sh`
+  - Windows: `start-frontend.bat`
 
 Once running, open `http://localhost:3000` in your browser.
+
 
 ---
 
