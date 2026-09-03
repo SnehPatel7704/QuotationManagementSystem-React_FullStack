@@ -92,7 +92,9 @@ router.get('/:id', authenticate, async (req, res) => {
 
 // Create quotation
 router.post('/', authenticate, async (req, res) => {
-  const { companyId, items, followUpDate } = req.body;
+  const companyId = req.body.companyId !== undefined ? req.body.companyId : req.body.quotation?.companyId;
+  const followUpDate = req.body.followUpDate !== undefined ? req.body.followUpDate : req.body.quotation?.followUpDate;
+  const items = req.body.items || [];
 
   try {
     // Get creator user id
@@ -151,7 +153,9 @@ router.post('/', authenticate, async (req, res) => {
 // Update quotation
 router.put('/:id', authenticate, async (req, res) => {
   const id = parseInt(req.params.id);
-  const { companyId, items, followUpDate } = req.body;
+  const companyId = req.body.companyId !== undefined ? req.body.companyId : req.body.quotation?.companyId;
+  const followUpDate = req.body.followUpDate !== undefined ? req.body.followUpDate : req.body.quotation?.followUpDate;
+  const items = req.body.items || [];
 
   try {
     const existing = await prisma.quotation.findUnique({

@@ -4,11 +4,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/layout/Layout';
 import { quotationService } from '../../services/quotationService';
 import { RejectionReasonModal } from '../../components/common';
-import { 
-  FiArrowLeft, 
-  FiCheck, 
-  FiX, 
-  FiDownload, 
+import {
+  FiArrowLeft,
+  FiCheck,
+  FiX,
+  FiDownload,
   FiAlertCircle,
   FiClock,
   FiUser,
@@ -27,6 +27,7 @@ const QuotationDetail = () => {
 
   useEffect(() => {
     loadQuotation();
+    console.log(quotation);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -117,7 +118,7 @@ const QuotationDetail = () => {
 
       // Get the PDF blob
       const blob = await response.blob();
-      
+
       // Create a download link
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -125,11 +126,11 @@ const QuotationDetail = () => {
       link.download = `quotation-${quotation.quotationNumber}.pdf`;
       document.body.appendChild(link);
       link.click();
-      
+
       // Cleanup
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       alert('PDF exported successfully!');
     } catch (error) {
       console.error('Error exporting PDF:', error);
@@ -155,10 +156,10 @@ const QuotationDetail = () => {
     );
   };
 
-  const canApprove = (user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') && 
-                     quotation?.status === 'PENDING_APPROVAL';
-  const canSubmit = (user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') && 
-                    quotation?.status === 'DRAFT';
+  const canApprove = (user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') &&
+    quotation?.status === 'PENDING_APPROVAL';
+  const canSubmit = (user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') &&
+    quotation?.status === 'DRAFT';
   const canExportPDF = quotation?.status === 'APPROVED' || quotation?.status === 'SENT';
 
   if (loading) {
@@ -322,13 +323,13 @@ const QuotationDetail = () => {
                 <div>
                   <label className="text-sm text-gray-600 dark:text-gray-400">Company</label>
                   <p className="font-medium text-gray-900 dark:text-white">
-                    {quotation.companyName || `Company ID: ${quotation.companyId}`}
+                    {quotation.company?.name || `Company ID: ${quotation.companyId}`}
                   </p>
                 </div>
                 <div>
                   <label className="text-sm text-gray-600 dark:text-gray-400">Total Amount</label>
                   <p className="font-bold text-2xl text-primary-600 dark:text-primary-400">
-                    OMR {quotation.totalAmount?.toFixed(2) || '0.00'}
+                    OMR {Number(quotation.totalAmount || 0).toFixed(2)}
                   </p>
                 </div>
                 <div>
@@ -376,11 +377,10 @@ const QuotationDetail = () => {
                 {quotation.followUpDate && (
                   <div>
                     <label className="text-sm text-gray-600 dark:text-gray-400">Follow-up Date</label>
-                    <p className={`font-medium ${
-                      new Date(quotation.followUpDate) < new Date() 
-                        ? 'text-red-600 dark:text-red-400' 
-                        : 'text-gray-900 dark:text-white'
-                    }`}>
+                    <p className={`font-medium ${new Date(quotation.followUpDate) < new Date()
+                      ? 'text-red-600 dark:text-red-400'
+                      : 'text-gray-900 dark:text-white'
+                      }`}>
                       {new Date(quotation.followUpDate).toLocaleDateString()}
                       {new Date(quotation.followUpDate) < new Date() && (
                         <span className="ml-2 text-xs">(Overdue)</span>
@@ -413,14 +413,14 @@ const QuotationDetail = () => {
                       quotation.items.map((item, index) => (
                         <tr key={index}>
                           <td className="table-cell">
-                            {item.productName || `Product ID: ${item.productId}`}
+                            {item.product.name || `Product ID: ${item.productId}`}
                           </td>
                           <td className="table-cell text-right">{item.quantity}</td>
                           <td className="table-cell text-right">
-                            OMR {item.unitPrice?.toFixed(2) || '0.00'}
+                            OMR {Number(item.unitPrice || 0).toFixed(2)}
                           </td>
                           <td className="table-cell text-right font-semibold">
-                            OMR {((item.quantity || 0) * (item.unitPrice || 0)).toFixed(2)}
+                            OMR {((item.quantity || 0) * Number(item.unitPrice || 0)).toFixed(2)}
                           </td>
                         </tr>
                       ))
@@ -438,7 +438,7 @@ const QuotationDetail = () => {
                         Total Amount:
                       </td>
                       <td className="table-cell text-right font-bold text-primary-600 dark:text-primary-400">
-                        OMR {quotation.totalAmount?.toFixed(2) || '0.00'}
+                        OMR {Number(quotation.totalAmount || 0).toFixed(2)}
                       </td>
                     </tr>
                   </tfoot>

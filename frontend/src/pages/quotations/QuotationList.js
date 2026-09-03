@@ -195,9 +195,9 @@ const QuotationList = () => {
                           )}
                         </div>
                       </td>
-                      <td className="table-cell">{quotation.companyId}</td>
+                      <td className="table-cell">{quotation.company?.name || `ID: ${quotation.companyId}`}</td>
                       <td className="table-cell font-semibold">
-                        OMR {quotation.totalAmount?.toFixed(2) || '0.00'}
+                        OMR {Number(quotation.totalAmount || 0).toFixed(2)}
                       </td>
                       <td className="table-cell">{getStatusBadge(quotation.status)}</td>
                       <td className="table-cell">
@@ -332,7 +332,7 @@ const QuotationList = () => {
                             )}
                           </div>
                           <p className="text-sm text-gray-600 dark:text-gray-400">
-                            Company ID: {quotation.companyId}
+                            Company: {quotation.company?.name || `ID: ${quotation.companyId}`}
                           </p>
                         </div>
                         {getStatusBadge(quotation.status)}
@@ -342,7 +342,7 @@ const QuotationList = () => {
                         <div>
                           <span className="text-gray-600 dark:text-gray-400">Amount:</span>
                           <p className="font-semibold text-gray-900 dark:text-white">
-                            OMR {quotation.totalAmount?.toFixed(2) || '0.00'}
+                            OMR {Number(quotation.totalAmount || 0).toFixed(2)}
                           </p>
                         </div>
                         <div>

@@ -364,7 +364,7 @@ const UpcomingFollowups = () => {
                       <div className="space-y-2">
                         <p className="text-gray-700 dark:text-gray-300 text-sm sm:text-base">
                           <span className="font-semibold">Company:</span>{' '}
-                          {quotation.companyName || 'N/A'}
+                          {quotation.company?.name || 'N/A'}
                         </p>
                         <p className="text-gray-700 dark:text-gray-300 text-sm sm:text-base">
                           <span className="font-semibold">Follow-up Date:</span>{' '}
@@ -377,7 +377,7 @@ const UpcomingFollowups = () => {
                         </p>
                         <p className="text-gray-700 dark:text-gray-300 text-sm sm:text-base">
                           <span className="font-semibold">Amount:</span>{' '}
-                          OMR {quotation.totalAmount?.toFixed(2) || '0.00'}
+                          OMR {Number(quotation.totalAmount || 0).toFixed(2)}
                         </p>
                       </div>
                     </div>

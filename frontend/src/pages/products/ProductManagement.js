@@ -94,7 +94,7 @@ const ProductManagement = () => {
                       <td className="table-cell font-medium">{product.name}</td>
                       <td className="table-cell">{product.description}</td>
                       <td className="table-cell font-semibold">
-                        OMR {product.basePrice?.toFixed(2) || '0.00'}
+                        OMR {Number(product.basePrice || 0).toFixed(2)}
                       </td>
                       <td className="table-cell">
                         <div className="flex space-x-2">
