@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../../components/layout/Layout';
 import { companyService } from '../../services/companyService';
-import { FiPlus, FiEdit, FiTrash2, FiBriefcase } from 'react-icons/fi';
+import { FiPlus, FiEdit, FiTrash2, FiBriefcase, FiDownload, FiUpload } from 'react-icons/fi';
 
 const CompanyManagement = () => {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingCompany, setEditingCompany] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const fileInputRef = React.useRef(null);
 
   useEffect(() => {
     loadCompanies();
@@ -45,6 +46,36 @@ const CompanyManagement = () => {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      await companyService.exportExcel();
+    } catch (error) {
+      console.error('Error exporting companies:', error);
+      alert('Failed to export companies');
+    }
+  };
+
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setLoading(true);
+      await companyService.importExcel(file);
+      await loadCompanies();
+      alert('Companies imported successfully!');
+    } catch (error) {
+      console.error('Error importing companies:', error);
+      alert('Failed to import companies');
+      setLoading(false);
+    }
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -58,15 +89,32 @@ const CompanyManagement = () => {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Companies</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-1">Manage company information</p>
           </div>
-          <button onClick={handleAdd} className="btn btn-primary flex items-center space-x-2">
-            <FiPlus size={20} />
-            <span>Add Company</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={handleExport} className="btn btn-secondary flex items-center space-x-2">
+              <FiDownload size={18} />
+              <span>Export</span>
+            </button>
+            <button onClick={() => fileInputRef.current?.click()} className="btn btn-secondary flex items-center space-x-2">
+              <FiUpload size={18} />
+              <span>Import</span>
+            </button>
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleImport} 
+              accept=".xlsx, .xls" 
+              className="hidden" 
+            />
+            <button onClick={handleAdd} className="btn btn-primary flex items-center space-x-2">
+              <FiPlus size={20} />
+              <span>Add Company</span>
+            </button>
+          </div>
         </div>
 
         <div className="card overflow-hidden p-0">

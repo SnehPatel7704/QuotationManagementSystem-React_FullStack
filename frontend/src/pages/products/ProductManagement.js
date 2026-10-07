@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../../components/layout/Layout';
 import { productService } from '../../services/productService';
-import { FiPlus, FiEdit, FiTrash2, FiPackage } from 'react-icons/fi';
+import { FiPlus, FiEdit, FiTrash2, FiPackage, FiDownload, FiUpload } from 'react-icons/fi';
 
 const ProductManagement = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingProduct, setEditingProduct] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const fileInputRef = React.useRef(null);
 
   useEffect(() => {
     loadProducts();
@@ -45,6 +46,36 @@ const ProductManagement = () => {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      await productService.exportExcel();
+    } catch (error) {
+      console.error('Error exporting products:', error);
+      alert('Failed to export products');
+    }
+  };
+
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setLoading(true);
+      await productService.importExcel(file);
+      await loadProducts();
+      alert('Products imported successfully!');
+    } catch (error) {
+      console.error('Error importing products:', error);
+      alert('Failed to import products');
+      setLoading(false);
+    }
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -58,15 +89,32 @@ const ProductManagement = () => {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Products</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-1">Manage product catalog</p>
           </div>
-          <button onClick={handleAdd} className="btn btn-primary flex items-center space-x-2">
-            <FiPlus size={20} />
-            <span>Add Product</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={handleExport} className="btn btn-secondary flex items-center space-x-2">
+              <FiDownload size={18} />
+              <span>Export</span>
+            </button>
+            <button onClick={() => fileInputRef.current?.click()} className="btn btn-secondary flex items-center space-x-2">
+              <FiUpload size={18} />
+              <span>Import</span>
+            </button>
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleImport} 
+              accept=".xlsx, .xls" 
+              className="hidden" 
+            />
+            <button onClick={handleAdd} className="btn btn-primary flex items-center space-x-2">
+              <FiPlus size={20} />
+              <span>Add Product</span>
+            </button>
+          </div>
         </div>
 
         <div className="card overflow-hidden p-0">

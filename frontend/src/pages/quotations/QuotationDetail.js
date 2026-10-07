@@ -13,13 +13,15 @@ import {
   FiClock,
   FiUser,
   FiCalendar,
-  FiUpload
+  FiUpload,
+  FiActivity
 } from 'react-icons/fi';
 
 const QuotationDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, companyProfile } = useAuth();
+  const currencySymbol = companyProfile?.currencySymbol || 'OMR';
   const [quotation, setQuotation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState({});
@@ -96,7 +98,7 @@ const QuotationDetail = () => {
   const handleExportPDF = async () => {
     setActionLoading(prev => ({ ...prev, pdf: true }));
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/quotations/${id}/pdf`, {
+      const response = await fetch(`${process.env.REACT_APP_API_URL || '/api'}/quotations/${id}/pdf`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -329,7 +331,7 @@ const QuotationDetail = () => {
                 <div>
                   <label className="text-sm text-gray-600 dark:text-gray-400">Total Amount</label>
                   <p className="font-bold text-2xl text-primary-600 dark:text-primary-400">
-                    OMR {Number(quotation.totalAmount || 0).toFixed(2)}
+                    {currencySymbol} {Number(quotation.totalAmount || 0).toFixed(2)}
                   </p>
                 </div>
                 <div>
@@ -417,10 +419,10 @@ const QuotationDetail = () => {
                           </td>
                           <td className="table-cell text-right">{item.quantity}</td>
                           <td className="table-cell text-right">
-                            OMR {Number(item.unitPrice || 0).toFixed(2)}
+                            {currencySymbol} {Number(item.unitPrice || 0).toFixed(2)}
                           </td>
                           <td className="table-cell text-right font-semibold">
-                            OMR {((item.quantity || 0) * Number(item.unitPrice || 0)).toFixed(2)}
+                            {currencySymbol} {((item.quantity || 0) * Number(item.unitPrice || 0)).toFixed(2)}
                           </td>
                         </tr>
                       ))
@@ -438,7 +440,7 @@ const QuotationDetail = () => {
                         Total Amount:
                       </td>
                       <td className="table-cell text-right font-bold text-primary-600 dark:text-primary-400">
-                        OMR {Number(quotation.totalAmount || 0).toFixed(2)}
+                        {currencySymbol} {Number(quotation.totalAmount || 0).toFixed(2)}
                       </td>
                     </tr>
                   </tfoot>
@@ -498,6 +500,40 @@ const QuotationDetail = () => {
                 </div>
               </div>
             )}
+
+            {/* Audit Timeline */}
+            <div className="card">
+              <div className="flex items-center space-x-2 mb-4">
+                <FiActivity className="text-primary-600 dark:text-primary-400" />
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                  Audit Timeline
+                </h3>
+              </div>
+              <div className="relative border-l-2 border-gray-200 dark:border-gray-700 ml-3 space-y-4">
+                {quotation.auditLogs && quotation.auditLogs.length > 0 ? (
+                  quotation.auditLogs.map((log) => (
+                    <div key={log.id} className="relative pl-6">
+                      <div className="absolute w-3 h-3 bg-primary-500 rounded-full -left-[7px] top-1.5 border-2 border-white dark:border-gray-800"></div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">
+                          {log.action}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {log.user?.username || 'System'} • {new Date(log.createdAt).toLocaleString()}
+                        </p>
+                        {log.details && (
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 italic">
+                            {log.details}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 ml-4">No audit logs found</p>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>

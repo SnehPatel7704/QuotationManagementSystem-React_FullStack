@@ -14,10 +14,14 @@ model User {
   email     String   @db.VarChar(100)
   role      UserRole @default(USER)
   enabled   Boolean  @default(true)
+  companyId Int?     @map("company_id")
   createdAt DateTime @default(now()) @map("created_at")
 
-  createdQuotations  Quotation[] @relation("QuotationCreator")
-  approvedQuotations Quotation[] @relation("QuotationApprover")
+  company            Company?            @relation("UserCompany", fields: [companyId], references: [id], onDelete: Cascade)
+  adminOfCompany     Company?            @relation("CompanyAdmin")
+  createdQuotations  Quotation[]         @relation("QuotationCreator")
+  approvedQuotations Quotation[]         @relation("QuotationApprover")
+  auditLogs          QuotationAuditLog[]
 
   @@map("users")
 }
@@ -29,26 +33,71 @@ enum UserRole {
 }
 
 model Company {
+  id                    Int      @id @default(autoincrement())
+  name                  String   @db.VarChar(100)
+  email                 String?  @db.VarChar(100)
+  phone                 String?  @db.VarChar(20)
+  address               String?  @db.Text
+  taxRegistrationNumber String?  @map("tax_registration_number") @db.VarChar(50)
+  currencyCode          String   @default("USD") @map("currency_code") @db.VarChar(10)
+  currencySymbol        String   @default("$") @map("currency_symbol") @db.VarChar(10)
+  defaultTaxRate        Decimal  @default(0.00) @map("default_tax_rate") @db.Decimal(5, 2)
+  isActive              Boolean  @default(true) @map("is_active")
+  adminUserId           Int?     @unique @map("admin_user_id")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  adminUser          User?               @relation("CompanyAdmin", fields: [adminUserId], references: [id])
+  users              User[]              @relation("UserCompany")
+  clientCompanies    ClientCompany[]
+  products           Product[]
+  quotations         Quotation[]
+  quotationTemplates QuotationTemplate[]
+
+  @@map("companies")
+}
+
+model ClientCompany {
   id        Int      @id @default(autoincrement())
+  companyId Int      @map("company_id")
   name      String   @db.VarChar(100)
   email     String?  @db.VarChar(100)
   phone     String?  @db.VarChar(20)
   address   String?  @db.Text
   createdAt DateTime @default(now()) @map("created_at")
 
+  tenantCompany Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  quotations    Quotation[]
+
+  @@map("client_companies")
+}
+
+model QuotationTemplate {
+  id                 Int      @id @default(autoincrement())
+  companyId          Int      @map("company_id")
+  name               String   @db.VarChar(100)
+  headerLayout       String?  @map("header_layout") @db.Text
+  termsAndConditions String?  @map("terms_and_conditions") @db.Text
+  defaultNotes       String?  @map("default_notes") @db.Text
+  footerText         String?  @map("footer_text") @db.Text
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
+
+  company    Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   quotations Quotation[]
 
-  @@map("companies")
+  @@map("quotation_templates")
 }
 
 model Product {
   id          Int      @id @default(autoincrement())
+  companyId   Int      @map("company_id")
   name        String   @db.VarChar(100)
   description String?  @db.Text
   basePrice   Decimal  @map("base_price") @db.Decimal(10, 2)
   category    String?  @db.VarChar(50)
   createdAt   DateTime @default(now()) @map("created_at")
 
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   quotationItems QuotationItem[]
 
   @@map("products")
@@ -58,8 +107,14 @@ model Quotation {
   id                Int             @id @default(autoincrement())
   quotationNumber   String          @map("quotation_number") @db.VarChar(50)
   companyId         Int             @map("company_id")
+  clientCompanyId   Int             @map("client_company_id")
   templateId        Int?            @map("template_id")
   status            QuotationStatus @default(DRAFT)
+  subtotalAmount    Decimal         @default(0.00) @map("subtotal_amount") @db.Decimal(12, 2)
+  discountType      DiscountType?   @map("discount_type")
+  discountValue     Decimal?        @map("discount_value") @db.Decimal(10, 2)
+  taxRate           Decimal?        @map("tax_rate") @db.Decimal(5, 2)
+  isTaxInclusive    Boolean         @default(false) @map("is_tax_inclusive")
   totalAmount       Decimal         @map("total_amount") @db.Decimal(12, 2)
   createdBy         Int             @map("created_by")
   approvedBy        Int?            @map("approved_by")
@@ -70,14 +125,18 @@ model Quotation {
   createdAt         DateTime        @default(now()) @map("created_at")
   updatedAt         DateTime        @default(now()) @updatedAt @map("updated_at")
 
-  company          Company         @relation(fields: [companyId], references: [id])
-  creator          User            @relation("QuotationCreator", fields: [createdBy], references: [id])
-  approver         User?           @relation("QuotationApprover", fields: [approvedBy], references: [id])
-  parentQuotation  Quotation?      @relation("QuotationRevisions", fields: [parentQuotationId], references: [id], onDelete: SetNull)
-  revisions        Quotation[]     @relation("QuotationRevisions")
-  items            QuotationItem[]
+  company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  clientCompany   ClientCompany       @relation(fields: [clientCompanyId], references: [id])
+  template        QuotationTemplate?  @relation(fields: [templateId], references: [id])
+  creator         User                @relation("QuotationCreator", fields: [createdBy], references: [id])
+  approver        User?               @relation("QuotationApprover", fields: [approvedBy], references: [id])
+  parentQuotation Quotation?          @relation("QuotationRevisions", fields: [parentQuotationId], references: [id], onDelete: SetNull)
+  revisions       Quotation[]         @relation("QuotationRevisions")
+  items           QuotationItem[]
+  auditLogs       QuotationAuditLog[]
 
   @@index([companyId])
+  @@index([clientCompanyId])
   @@index([createdBy])
   @@index([approvedBy])
   @@index([parentQuotationId])
@@ -95,12 +154,14 @@ enum QuotationStatus {
 }
 
 model QuotationItem {
-  id          Int     @id @default(autoincrement())
-  quotationId Int     @map("quotation_id")
-  productId   Int     @map("product_id")
-  quantity    Int
-  unitPrice   Decimal @map("unit_price") @db.Decimal(10, 2)
-  totalPrice  Decimal @map("total_price") @db.Decimal(10, 2)
+  id            Int           @id @default(autoincrement())
+  quotationId   Int           @map("quotation_id")
+  productId     Int           @map("product_id")
+  quantity      Int
+  unitPrice     Decimal       @map("unit_price") @db.Decimal(10, 2)
+  discountType  DiscountType? @map("discount_type")
+  discountValue Decimal?      @map("discount_value") @db.Decimal(10, 2)
+  totalPrice    Decimal       @map("total_price") @db.Decimal(10, 2)
 
   quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
   product   Product   @relation(fields: [productId], references: [id])
@@ -108,4 +169,27 @@ model QuotationItem {
   @@index([quotationId])
   @@index([productId])
   @@map("quotation_items")
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+model QuotationAuditLog {
+  id          Int              @id @default(autoincrement())
+  quotationId Int              @map("quotation_id")
+  userId      Int              @map("user_id")
+  action      String           @db.VarChar(50)
+  oldStatus   QuotationStatus? @map("old_status")
+  newStatus   QuotationStatus? @map("new_status")
+  notes       String?          @db.Text
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([quotationId])
+  @@index([userId])
+  @@map("quotation_audit_logs")
 }

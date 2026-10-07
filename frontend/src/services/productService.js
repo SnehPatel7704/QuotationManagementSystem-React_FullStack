@@ -52,4 +52,33 @@ export const productService = {
       throw error;
     }
   },
+
+  exportExcel: async () => {
+    try {
+      const response = await api.get('/products/export-excel', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'products.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  importExcel: async (file) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      return await api.post('/products/import-excel', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+    } catch (error) {
+      throw error;
+    }
+  },
 };

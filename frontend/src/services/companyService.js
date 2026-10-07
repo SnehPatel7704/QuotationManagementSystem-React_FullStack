@@ -52,4 +52,33 @@ export const companyService = {
       throw error;
     }
   },
+  
+  exportExcel: async () => {
+    try {
+      const response = await api.get('/companies/export-excel', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'companies.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  importExcel: async (file) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      return await api.post('/companies/import-excel', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+    } catch (error) {
+      throw error;
+    }
+  },
 };

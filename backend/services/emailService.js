@@ -32,16 +32,33 @@ async function sendQuotationToAdmin(quotation, adminEmail) {
   }
 }
 
+const { generateQuotationPDFBuffer } = require('./pdfService');
+
 /**
  * Send approved quotation details to client
  */
 async function sendQuotationToClient(quotation, clientEmail) {
   if (!process.env.MAIL_USERNAME) return;
+  
+  let pdfBuffer;
+  try {
+    pdfBuffer = await generateQuotationPDFBuffer(quotation);
+  } catch (err) {
+    console.error('Failed to generate PDF for email attachment', err);
+  }
+
   const mailOptions = {
     from: FROM_EMAIL,
     to: clientEmail,
     subject: `Your Quotation: ${quotation.quotationNumber}`,
-    text: `Dear Customer,\n\nPlease find your quotation details below:\n\nQuotation Number: ${quotation.quotationNumber}\nTotal Amount: ${quotation.totalAmount}\n\nThank you for your business.`,
+    text: `Dear Customer,\n\nPlease find your quotation details attached below:\n\nQuotation Number: ${quotation.quotationNumber}\nTotal Amount: ${quotation.totalAmount}\n\nThank you for your business.`,
+    attachments: pdfBuffer ? [
+      {
+        filename: `Quotation_${quotation.quotationNumber}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf',
+      }
+    ] : [],
   };
 
   try {

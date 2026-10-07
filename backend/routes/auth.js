@@ -27,16 +27,18 @@ router.post('/login', async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
+      { id: user.id, username: user.username, role: user.role, companyId: user.companyId },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
 
     res.json({
       token,
+      id: user.id,
       username: user.username,
       role: user.role,
       email: user.email,
+      companyId: user.companyId,
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -54,6 +56,7 @@ router.get('/me', authenticate, async (req, res) => {
         username: true,
         email: true,
         role: true,
+        companyId: true,
       },
     });
 

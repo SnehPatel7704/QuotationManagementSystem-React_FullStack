@@ -18,8 +18,10 @@ function authenticate(req, res, next) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = {
+      id: decoded.id,
       username: decoded.username,
       role: decoded.role,
+      companyId: decoded.companyId,
     };
     next();
   } catch (error) {

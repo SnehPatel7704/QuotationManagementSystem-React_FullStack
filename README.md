@@ -97,11 +97,15 @@ The following credentials are seeded by default for testing purposes:
   - Create and edit quotations.
   - Add items (products with custom quantities and prices).
   - Status tracking (Draft, Pending Approval, Approved, Sent, Rejected).
-  - Revision history (track quotation revisions).
-  - PDF generation for quotations.
+  - Revision history and comprehensive **Audit Trail Timeline** for all actions.
+  - PDF generation and dynamic **email dispatch with PDF attachments**.
 - **Company & Product Directory**
   - Manage companies/clients.
   - Manage product catalogs with base prices.
+  - **Excel Import/Export** capabilities for bulk data management.
+- **Dashboard Analytics**
+  - View key metrics (Total Revenue, Approved Quotes, Win Rate).
+  - Interactive charts (Revenue trends and Status distribution) using Recharts.
 - **Theme Support**
   - Light/Dark mode toggle with persistent preference.
 - **Responsive Modern UI**
@@ -145,13 +149,15 @@ quotation-system/
 - JSON Web Token (JWT) for secure authentication
 - bcryptjs for password hashing
 - pdfkit for PDF generation
-- nodemailer for sending mail notifications
+- nodemailer for sending mail notifications with attachments
+- exceljs & multer for Excel file import/export processing
 
 ### Frontend
 - React 18
 - React Router v6 for routing
 - Tailwind CSS 3 for UI styling
 - Radix UI Primitives (Select, Dialog, Toast, etc.) for interactive components
+- Recharts for interactive dashboard analytics charts
 - Axios for API requests
 - React Icons
 
@@ -165,6 +171,7 @@ quotation-system/
 
 ### Quotations
 - `GET /api/quotations` - Fetch list of quotations
+- `GET /api/quotations/analytics` - Fetch dashboard analytics and charts data
 - `GET /api/quotations/:id` - Fetch quotation by ID
 - `POST /api/quotations` - Create new quotation (Admin/Super Admin only)
 - `PUT /api/quotations/:id` - Update existing quotation (Admin/Super Admin only)
@@ -184,12 +191,16 @@ quotation-system/
 - `POST /api/companies` - Create company (Admin/Super Admin only)
 - `PUT /api/companies/:id` - Update company details (Admin/Super Admin only)
 - `DELETE /api/companies/:id` - Delete company (Admin/Super Admin only)
+- `GET /api/companies/export-excel` - Export companies to Excel
+- `POST /api/companies/import-excel` - Import companies from Excel
 
 ### Products
 - `GET /api/products` - List products
 - `POST /api/products` - Create product (Admin/Super Admin only)
 - `PUT /api/products/:id` - Update product details (Admin/Super Admin only)
 - `DELETE /api/products/:id` - Delete product (Admin/Super Admin only)
+- `GET /api/products/export-excel` - Export products to Excel
+- `POST /api/products/import-excel` - Import products from Excel
 
 ---
 

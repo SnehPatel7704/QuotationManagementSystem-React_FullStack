@@ -4,10 +4,7 @@ const PDFDocument = require('pdfkit');
  * Generates a professional quotation PDF using PDFKit.
  * All elements use fixed absolute coordinates to avoid cursor drift.
  */
-function generateQuotationPDF(quotation, stream) {
-  const doc = new PDFDocument({ margin: 0, size: 'A4' });
-  doc.pipe(stream);
-
+function buildPDF(quotation, doc) {
   const PAGE_W  = 595;
   const MARGIN  = 40;
   const CONTENT = PAGE_W - MARGIN * 2; // 515
@@ -138,7 +135,7 @@ function generateQuotationPDF(quotation, stream) {
     ['Description',C.description],
     ['Qty',        C.qty],
     ['Unit Price', C.unitPrice],
-    ['Total (OMR)',C.total],
+    ['Total',      C.total], // Removing OMR hardcode
   ];
 
   doc.fillColor('#ffffff').fontSize(8).font('Helvetica-Bold');
@@ -187,10 +184,10 @@ function generateQuotationPDF(quotation, stream) {
     doc.text(String(item.quantity), C.qty.x + CELL_PAD, cy, {
       width: C.qty.w - CELL_PAD * 2, align: 'center', lineBreak: false,
     });
-    doc.text(`OMR ${parseFloat(item.unitPrice).toFixed(2)}`, C.unitPrice.x, cy, {
+    doc.text(parseFloat(item.unitPrice).toFixed(2), C.unitPrice.x, cy, {
       width: C.unitPrice.w - CELL_PAD, align: 'right', lineBreak: false,
     });
-    doc.text(`OMR ${parseFloat(item.totalPrice).toFixed(2)}`, C.total.x, cy, {
+    doc.text(parseFloat(item.totalPrice).toFixed(2), C.total.x, cy, {
       width: C.total.w - CELL_PAD, align: 'right', lineBreak: false,
     });
 
@@ -221,7 +218,7 @@ function generateQuotationPDF(quotation, stream) {
     .fontSize(12)
     .font('Helvetica-Bold')
     .text(
-      `OMR ${parseFloat(quotation.totalAmount).toFixed(2)}`,
+      parseFloat(quotation.totalAmount).toFixed(2),
       C.total.x,
       totalY + 7,
       { width: C.total.w - CELL_PAD, align: 'right', lineBreak: false }
@@ -258,4 +255,22 @@ function generateQuotationPDF(quotation, stream) {
   doc.end();
 }
 
-module.exports = { generateQuotationPDF };
+function generateQuotationPDF(quotation, stream) {
+  const doc = new PDFDocument({ margin: 0, size: 'A4' });
+  doc.pipe(stream);
+  buildPDF(quotation, doc);
+}
+
+function generateQuotationPDFBuffer(quotation) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 0, size: 'A4' });
+    const buffers = [];
+    doc.on('data', buffers.push.bind(buffers));
+    doc.on('end', () => resolve(Buffer.concat(buffers)));
+    doc.on('error', reject);
+    buildPDF(quotation, doc);
+  });
+}
+
+
+module.exports = { generateQuotationPDF, generateQuotationPDFBuffer };

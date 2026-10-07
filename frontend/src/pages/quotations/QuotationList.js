@@ -14,7 +14,8 @@ const QuotationList = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedQuotationId, setSelectedQuotationId] = useState(null);
   const [selectedQuotationNumber, setSelectedQuotationNumber] = useState('');
-  const { user } = useAuth();
+  const { user, companyProfile } = useAuth();
+  const currencySymbol = companyProfile?.currencySymbol || 'OMR';
 
   useEffect(() => {
     loadQuotations();
@@ -197,7 +198,7 @@ const QuotationList = () => {
                       </td>
                       <td className="table-cell">{quotation.company?.name || `ID: ${quotation.companyId}`}</td>
                       <td className="table-cell font-semibold">
-                        OMR {Number(quotation.totalAmount || 0).toFixed(2)}
+                        {currencySymbol} {Number(quotation.totalAmount || 0).toFixed(2)}
                       </td>
                       <td className="table-cell">{getStatusBadge(quotation.status)}</td>
                       <td className="table-cell">
@@ -342,7 +343,7 @@ const QuotationList = () => {
                         <div>
                           <span className="text-gray-600 dark:text-gray-400">Amount:</span>
                           <p className="font-semibold text-gray-900 dark:text-white">
-                            OMR {Number(quotation.totalAmount || 0).toFixed(2)}
+                            {currencySymbol} {Number(quotation.totalAmount || 0).toFixed(2)}
                           </p>
                         </div>
                         <div>

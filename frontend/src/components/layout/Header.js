@@ -57,10 +57,16 @@ const Header = () => {
                 >
                   Products
                 </Link>
+                <Link 
+                  to="/company-profile" 
+                  className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Settings
+                </Link>
               </>
             )}
             
-            {user?.role === 'SUPERADMIN' && (
+            {['SUPERADMIN', 'ADMIN'].includes(user?.role) && (
               <Link 
                 to="/users" 
                 className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -182,10 +188,17 @@ const Header = () => {
                 >
                   Products
                 </Link>
+                <Link 
+                  to="/company-profile" 
+                  className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Settings
+                </Link>
               </>
             )}
             
-            {user?.role === 'SUPERADMIN' && (
+            {['SUPERADMIN', 'ADMIN'].includes(user?.role) && (
               <Link 
                 to="/users" 
                 className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"

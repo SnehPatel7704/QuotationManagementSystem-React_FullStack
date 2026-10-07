@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/layout/Layout';
 import FormInput from '../../components/common/FormInput';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -19,10 +20,14 @@ import { FiSave, FiX, FiPlus, FiTrash2, FiSearch } from 'react-icons/fi';
 const QuotationCreate = () => {
   const navigate = useNavigate();
   
+  const { companyProfile } = useAuth();
+  const currencySymbol = companyProfile?.currencySymbol || 'OMR';
+
   // State for form data
   const [formData, setFormData] = useState({
     companyId: '',
     followUpDate: '',
+    taxRate: companyProfile?.defaultTaxRate || 0,
     items: [{ productId: '', quantity: 1, unitPrice: 0 }],
   });
 
@@ -269,6 +274,7 @@ const QuotationCreate = () => {
           companyId: Number(formData.companyId),
           followUpDate: formData.followUpDate || null,
           createdBy: userId,
+          taxRate: formData.taxRate,
           // Set status based on button clicked
           status: saveAsDraft ? 'DRAFT' : null, // null will default to PENDING_APPROVAL in backend
         },
@@ -524,7 +530,7 @@ const QuotationCreate = () => {
                         Item Total:
                       </span>
                       <span className="ml-2 text-base sm:text-lg font-semibold text-gray-900 dark:text-white">
-                        OMR {calculateItemTotal(item.quantity, item.unitPrice).toFixed(2)}
+                        {currencySymbol} {calculateItemTotal(item.quantity, item.unitPrice).toFixed(2)}
                       </span>
                     </div>
                   </div>
@@ -541,7 +547,7 @@ const QuotationCreate = () => {
                   Quotation Total:
                 </span>
                 <span className="ml-2 sm:ml-4 text-xl sm:text-2xl font-bold text-primary-600 dark:text-primary-400">
-                  OMR {quotationTotal.toFixed(2)}
+                  {currencySymbol} {quotationTotal.toFixed(2)}
                 </span>
               </div>
             </div>

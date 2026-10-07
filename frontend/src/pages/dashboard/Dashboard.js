@@ -1,12 +1,30 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/layout/Layout';
 import UpcomingFollowups from './UpcomingFollowups';
+import api from '../../services/api';
 import { FiFileText, FiUsers, FiBriefcase, FiPackage, FiTrendingUp } from 'react-icons/fi';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const Dashboard = () => {
-  const { user } = useAuth();
+  const { user, companyProfile } = useAuth();
+  const currencySymbol = companyProfile?.currencySymbol || 'OMR';
+  const currencyCode = companyProfile?.currencyCode || 'OMR';
+  const [analytics, setAnalytics] = useState(null);
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#AF19FF'];
+
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        const response = await api.get('/quotations/analytics');
+        setAnalytics(response.data);
+      } catch (error) {
+        console.error('Error fetching analytics:', error);
+      }
+    };
+    fetchAnalytics();
+  }, []);
 
   const cards = [
     {
@@ -65,56 +83,65 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Role-based Access Info */}
-        {/* <div className="card bg-gradient-to-r from-primary-50 to-blue-50 dark:from-gray-800 dark:to-gray-700 border-l-4 border-primary-600">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-3">
-            Your Access Level
-          </h2>
-          {user?.role === 'SUPERADMIN' && (
-            <div className="space-y-2 text-sm sm:text-base text-gray-700 dark:text-gray-300">
-              <p className="flex items-center">
-                <span className="w-2 h-2 bg-green-500 rounded-full mr-2 flex-shrink-0"></span>
-                <span>Full system access including user management</span>
-              </p>
-              <p className="flex items-center">
-                <span className="w-2 h-2 bg-green-500 rounded-full mr-2 flex-shrink-0"></span>
-                <span>Create, edit, approve, and delete quotations</span>
-              </p>
-              <p className="flex items-center">
-                <span className="w-2 h-2 bg-green-500 rounded-full mr-2 flex-shrink-0"></span>
-                <span>Manage companies, products, and users</span>
-              </p>
+        {/* Analytics Summary */}
+        {analytics && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mt-6">
+            <div className="card bg-blue-50 dark:bg-gray-800 p-4 rounded-xl border-l-4 border-blue-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{currencySymbol} {analytics.metrics.totalRevenue.toFixed(2)}</h3>
             </div>
-          )}
-          {user?.role === 'ADMIN' && (
-            <div className="space-y-2 text-sm sm:text-base text-gray-700 dark:text-gray-300">
-              <p className="flex items-center">
-                <span className="w-2 h-2 bg-blue-500 rounded-full mr-2 flex-shrink-0"></span>
-                <span>Create, edit, and approve quotations</span>
-              </p>
-              <p className="flex items-center">
-                <span className="w-2 h-2 bg-blue-500 rounded-full mr-2 flex-shrink-0"></span>
-                <span>Manage companies and products</span>
-              </p>
-              <p className="flex items-center">
-                <span className="w-2 h-2 bg-blue-500 rounded-full mr-2 flex-shrink-0"></span>
-                <span>Send quotations to clients</span>
-              </p>
+            <div className="card bg-green-50 dark:bg-gray-800 p-4 rounded-xl border-l-4 border-green-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Approved Quotes</p>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{analytics.metrics.approvedCount}</h3>
             </div>
-          )}
-          {user?.role === 'USER' && (
-            <div className="space-y-2 text-sm sm:text-base text-gray-700 dark:text-gray-300">
-              <p className="flex items-center">
-                <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2 flex-shrink-0"></span>
-                <span>View quotations</span>
-              </p>
-              <p className="flex items-center">
-                <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2 flex-shrink-0"></span>
-                <span>View companies and products</span>
-              </p>
+            <div className="card bg-yellow-50 dark:bg-gray-800 p-4 rounded-xl border-l-4 border-yellow-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Pending Approvals</p>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{analytics.metrics.pendingCount}</h3>
             </div>
-          )}
-        </div> */}
+            <div className="card bg-purple-50 dark:bg-gray-800 p-4 rounded-xl border-l-4 border-purple-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Win Rate</p>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{analytics.metrics.winRate}%</h3>
+            </div>
+          </div>
+        )}
+
+        {/* Charts */}
+        {analytics && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <div className="card">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Monthly Quoted Revenue</h2>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={analytics.chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} name={`Revenue (${currencyCode})`} activeDot={{ r: 8 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="card">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Status Distribution</h2>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={analytics.pieData} cx="50%" cy="50%" labelLine={false} label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`} outerRadius={100} fill="#8884d8" dataKey="value">
+                      {analytics.pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Quick Access Cards */}
         <div>

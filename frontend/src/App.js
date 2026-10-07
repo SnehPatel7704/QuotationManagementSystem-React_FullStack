@@ -14,6 +14,7 @@ import QuotationDetail from './pages/quotations/QuotationDetail';
 import UserManagement from './pages/users/UserManagement';
 import CompanyManagement from './pages/companies/CompanyManagement';
 import ProductManagement from './pages/products/ProductManagement';
+import CompanyProfile from './pages/settings/CompanyProfile';
 
 function App() {
   return (
@@ -68,9 +69,17 @@ function App() {
                 } />
                 
                 <Route path="/users" element={
-                  <PrivateRoute roles={['SUPERADMIN']}>
+                  <PrivateRoute roles={['SUPERADMIN', 'ADMIN']}>
                     <ErrorBoundary>
                       <UserManagement />
+                    </ErrorBoundary>
+                  </PrivateRoute>
+                } />
+                
+                <Route path="/company-profile" element={
+                  <PrivateRoute roles={['SUPERADMIN', 'ADMIN']}>
+                    <ErrorBoundary>
+                      <CompanyProfile />
                     </ErrorBoundary>
                   </PrivateRoute>
                 } />

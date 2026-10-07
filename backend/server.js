@@ -7,6 +7,7 @@ const quotationRoutes = require('./routes/quotations');
 const companyRoutes = require('./routes/companies');
 const productRoutes = require('./routes/products');
 const userRoutes = require('./routes/users');
+const companyProfileRoutes = require('./routes/companyProfile');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -33,6 +34,7 @@ app.use('/api/quotations', quotationRoutes);
 app.use('/api/companies', companyRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/superadmin/users', userRoutes);
+app.use('/api/company/profile', companyProfileRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
