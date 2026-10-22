@@ -6,15 +6,18 @@ const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-me';
 
 // Login route
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
 
   try {
+    if (typeof username !== 'string' || typeof password !== 'string' || !username.trim() || !password) {
+      return res.status(400).json({ message: 'Username and password are required' });
+    }
+
     const user = await prisma.user.findUnique({
-      where: { username },
+      where: { username: username.trim() },
     });
 
     if (!user || !user.enabled) {
@@ -28,7 +31,7 @@ router.post('/login', async (req, res) => {
 
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role, companyId: user.companyId },
-      JWT_SECRET,
+      process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
 
@@ -50,7 +53,7 @@ router.post('/login', async (req, res) => {
 router.get('/me', authenticate, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
-      where: { username: req.user.username },
+      where: { id: req.user.id },
       select: {
         id: true,
         username: true,

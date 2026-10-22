@@ -13,18 +13,24 @@ const UpcomingFollowups = () => {
 
   const calculateDateRange = useCallback((filter) => {
     const today = new Date();
-    const startDate = today.toISOString().split('T')[0];
+    const formatDate = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    const startDate = formatDate(today);
     let endDate;
 
     switch (filter) {
       case 'next15days':
-        endDate = new Date(today.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        endDate = formatDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 15));
         break;
       case 'next30days':
-        endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        endDate = formatDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 30));
         break;
       case 'next2months':
-        endDate = new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        endDate = formatDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 60));
         break;
       case 'custom':
         return { startDate: customStartDate, endDate: customEndDate };
@@ -44,6 +50,11 @@ const UpcomingFollowups = () => {
       
       if (selectedFilter === 'custom' && (!customStartDate || !customEndDate)) {
         setError('Please select both start and end dates for custom range');
+        setLoading(false);
+        return;
+      }
+      if (selectedFilter === 'custom' && customStartDate > customEndDate) {
+        setError('The start date must be on or before the end date.');
         setLoading(false);
         return;
       }
@@ -103,7 +114,7 @@ const UpcomingFollowups = () => {
   const calculateDaysUntil = (followUpDate) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const targetDate = new Date(followUpDate);
+    const targetDate = new Date(`${String(followUpDate).slice(0, 10)}T00:00:00`);
     targetDate.setHours(0, 0, 0, 0);
     const diffTime = targetDate - today;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));

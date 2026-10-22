@@ -1,32 +1,64 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Layout from '../../components/layout/Layout';
+import { useAuth } from '../../contexts/AuthContext';
+import { companyService } from '../../services/companyService';
 import { productService } from '../../services/productService';
 import { FiPlus, FiEdit, FiTrash2, FiPackage, FiDownload, FiUpload } from 'react-icons/fi';
 
 const ProductManagement = () => {
+  const { user, companyProfile } = useAuth();
+  const isSuperAdmin = user?.role === 'SUPERADMIN';
   const [products, setProducts] = useState([]);
+  const [tenantCompanies, setTenantCompanies] = useState([]);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
   const [loading, setLoading] = useState(true);
   const [editingProduct, setEditingProduct] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const fileInputRef = React.useRef(null);
 
-  useEffect(() => {
-    loadProducts();
-  }, []);
-
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async (tenantId) => {
     try {
-      const response = await productService.getAll();
+      const response = await productService.getAll(isSuperAdmin ? tenantId : undefined);
       setProducts(response.data);
     } catch (error) {
       console.error('Error loading products:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [isSuperAdmin]);
+
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      loadProducts();
+      return;
+    }
+
+    companyService.getTenants()
+      .then((response) => {
+        setTenantCompanies(response.data);
+        if (response.data.length > 0) {
+          setSelectedTenantId(String(response.data[0].id));
+        } else {
+          setLoading(false);
+        }
+      })
+      .catch((error) => {
+        console.error('Error loading tenant companies:', error);
+        setLoading(false);
+      });
+  }, [isSuperAdmin, loadProducts]);
+
+  useEffect(() => {
+    if (isSuperAdmin && selectedTenantId) {
+      loadProducts(selectedTenantId);
+    }
+  }, [isSuperAdmin, selectedTenantId, loadProducts]);
 
   const handleEdit = (product) => {
     setEditingProduct(product);
+    if (isSuperAdmin) {
+      setSelectedTenantId(String(product.companyId));
+    }
     setShowModal(true);
   };
 
@@ -39,7 +71,7 @@ const ProductManagement = () => {
     if (window.confirm('Are you sure you want to delete this product?')) {
       try {
         await productService.delete(id);
-        loadProducts();
+        loadProducts(isSuperAdmin ? selectedTenantId : undefined);
       } catch (error) {
         console.error('Error deleting product:', error);
       }
@@ -48,7 +80,7 @@ const ProductManagement = () => {
 
   const handleExport = async () => {
     try {
-      await productService.exportExcel();
+      await productService.exportExcel(isSuperAdmin ? selectedTenantId : undefined);
     } catch (error) {
       console.error('Error exporting products:', error);
       alert('Failed to export products');
@@ -58,15 +90,20 @@ const ProductManagement = () => {
   const handleImport = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (isSuperAdmin && !selectedTenantId) {
+      alert('Select a company before importing products.');
+      e.target.value = '';
+      return;
+    }
 
     try {
       setLoading(true);
-      await productService.importExcel(file);
-      await loadProducts();
-      alert('Products imported successfully!');
+      const response = await productService.importExcel(file, isSuperAdmin ? selectedTenantId : undefined);
+      await loadProducts(isSuperAdmin ? selectedTenantId : undefined);
+      alert(response.data.message);
     } catch (error) {
       console.error('Error importing products:', error);
-      alert('Failed to import products');
+      alert(error.response?.data?.message || 'Failed to import products.');
       setLoading(false);
     }
     
@@ -95,11 +132,29 @@ const ProductManagement = () => {
             <p className="text-gray-600 dark:text-gray-400 mt-1">Manage product catalog</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {isSuperAdmin && (
+              <select
+                aria-label="Tenant company"
+                value={selectedTenantId}
+                onChange={(event) => setSelectedTenantId(event.target.value)}
+                className="input min-w-48"
+                disabled={tenantCompanies.length === 0}
+              >
+                {tenantCompanies.length === 0 && <option value="">No active companies</option>}
+                {tenantCompanies.map((tenant) => (
+                  <option key={tenant.id} value={tenant.id}>{tenant.name}</option>
+                ))}
+              </select>
+            )}
             <button onClick={handleExport} className="btn btn-secondary flex items-center space-x-2">
               <FiDownload size={18} />
               <span>Export</span>
             </button>
-            <button onClick={() => fileInputRef.current?.click()} className="btn btn-secondary flex items-center space-x-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isSuperAdmin && !selectedTenantId}
+              className="btn btn-secondary flex items-center space-x-2 disabled:opacity-50"
+            >
               <FiUpload size={18} />
               <span>Import</span>
             </button>
@@ -107,10 +162,14 @@ const ProductManagement = () => {
               type="file" 
               ref={fileInputRef} 
               onChange={handleImport} 
-              accept=".xlsx, .xls" 
+              accept=".xlsx"
               className="hidden" 
             />
-            <button onClick={handleAdd} className="btn btn-primary flex items-center space-x-2">
+            <button
+              onClick={handleAdd}
+              disabled={isSuperAdmin && !selectedTenantId}
+              className="btn btn-primary flex items-center space-x-2 disabled:opacity-50"
+            >
               <FiPlus size={20} />
               <span>Add Product</span>
             </button>
@@ -142,7 +201,9 @@ const ProductManagement = () => {
                       <td className="table-cell font-medium">{product.name}</td>
                       <td className="table-cell">{product.description}</td>
                       <td className="table-cell font-semibold">
-                        OMR {Number(product.basePrice || 0).toFixed(2)}
+                        {(isSuperAdmin
+                          ? tenantCompanies.find((tenant) => tenant.id === product.companyId)?.currencySymbol
+                          : companyProfile?.currencySymbol) || '$'} {Number(product.basePrice || 0).toFixed(2)}
                       </td>
                       <td className="table-cell">
                         <div className="flex space-x-2">
@@ -183,7 +244,8 @@ const ProductManagement = () => {
                 const data = {
                   name: formData.get('name'),
                   description: formData.get('description'),
-                  basePrice: parseFloat(formData.get('basePrice'))
+                  basePrice: parseFloat(formData.get('basePrice')),
+                  ...(isSuperAdmin ? { companyId: Number(selectedTenantId) } : {}),
                 };
                 try {
                   if (editingProduct) {
@@ -192,7 +254,7 @@ const ProductManagement = () => {
                     await productService.create(data);
                   }
                   setShowModal(false);
-                  loadProducts();
+                  loadProducts(isSuperAdmin ? selectedTenantId : undefined);
                 } catch (error) {
                   console.error('Error saving product:', error);
                   alert('Failed to save product');
@@ -209,6 +271,21 @@ const ProductManagement = () => {
                       className="input w-full"
                     />
                   </div>
+                  {isSuperAdmin && !editingProduct && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Tenant company *</label>
+                      <select
+                        value={selectedTenantId}
+                        onChange={(event) => setSelectedTenantId(event.target.value)}
+                        required
+                        className="input w-full"
+                      >
+                        {tenantCompanies.map((tenant) => (
+                          <option key={tenant.id} value={tenant.id}>{tenant.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium mb-1">Description</label>
                     <textarea

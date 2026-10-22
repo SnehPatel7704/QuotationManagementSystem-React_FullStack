@@ -3,17 +3,48 @@ const { PrismaClient } = require('@prisma/client');
 const { authenticate, authorize } = require('../middleware/auth');
 const multer = require('multer');
 const ExcelJS = require('exceljs');
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
+// List tenant companies for SUPERADMIN-scoped workflows
+router.get('/tenants', authenticate, authorize('SUPERADMIN'), async (req, res) => {
+  try {
+    const companies = await prisma.company.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, currencyCode: true, currencySymbol: true },
+      orderBy: { name: 'asc' },
+    });
+    res.json(companies);
+  } catch (error) {
+    console.error('Error fetching tenant companies:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Get all client companies
 router.get('/', authenticate, async (req, res) => {
   try {
-    const whereClause = req.user.role === 'SUPERADMIN' ? {} : { companyId: req.user.companyId };
+    let whereClause = { companyId: req.user.companyId };
+    if (req.user.role === 'SUPERADMIN') {
+      if (req.query.companyId !== undefined) {
+        const companyId = Number(req.query.companyId);
+        if (!Number.isInteger(companyId) || companyId <= 0) {
+          return res.status(400).json({ message: 'companyId must be a positive integer.' });
+        }
+        whereClause = { companyId };
+      } else {
+        whereClause = {};
+      }
+    }
     const companies = await prisma.clientCompany.findMany({
       where: whereClause,
+      include: {
+        tenantCompany: {
+          select: { name: true, currencySymbol: true, currencyCode: true },
+        },
+      },
       orderBy: { name: 'asc' },
     });
     res.json(companies);
@@ -26,7 +57,18 @@ router.get('/', authenticate, async (req, res) => {
 // Export client companies to Excel
 router.get('/export-excel', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res) => {
   try {
-    const whereClause = req.user.role === 'SUPERADMIN' ? {} : { companyId: req.user.companyId };
+    let whereClause = { companyId: req.user.companyId };
+    if (req.user.role === 'SUPERADMIN') {
+      if (req.query.companyId !== undefined) {
+        const companyId = Number(req.query.companyId);
+        if (!Number.isInteger(companyId) || companyId <= 0) {
+          return res.status(400).json({ message: 'companyId must be a positive integer.' });
+        }
+        whereClause = { companyId };
+      } else {
+        whereClause = {};
+      }
+    }
     const companies = await prisma.clientCompany.findMany({
       where: whereClause,
       orderBy: { name: 'asc' },
@@ -78,43 +120,99 @@ router.post('/import-excel', authenticate, authorize('ADMIN', 'SUPERADMIN'), upl
     if (!worksheet) {
       return res.status(400).json({ message: 'Invalid Excel file' });
     }
+    if (worksheet.rowCount > 5001) {
+      return res.status(413).json({ message: 'The worksheet cannot contain more than 5,000 data rows.' });
+    }
+
+    const headers = new Map();
+    worksheet.getRow(1).eachCell((cell, column) => {
+      headers.set(String(cell.text || cell.value || '').trim().toLowerCase(), column);
+    });
+    const nameColumn = headers.get('name');
+    if (!nameColumn) {
+      return res.status(400).json({ message: 'The worksheet must include a Name column.' });
+    }
+
+    const targetCompanyId = req.user.role === 'SUPERADMIN'
+      ? Number(req.body.companyId)
+      : req.user.companyId;
+    if (!Number.isInteger(targetCompanyId) || targetCompanyId <= 0) {
+      return res.status(400).json({ message: 'A valid companyId is required for this import.' });
+    }
+    const tenant = await prisma.company.findFirst({
+      where: { id: targetCompanyId, isActive: true },
+      select: { id: true },
+    });
+    if (!tenant) {
+      return res.status(400).json({ message: 'The selected company does not exist or is inactive.' });
+    }
 
     const companies = [];
-    let isHeader = true;
-
+    const invalidRows = [];
     worksheet.eachRow((row, rowNumber) => {
-      if (isHeader) {
-        isHeader = false;
+      if (rowNumber === 1) {
         return;
       }
 
-      const name = row.getCell(1).value;
-      const email = row.getCell(2).value;
-      const phone = row.getCell(3).value;
-      const address = row.getCell(4).value;
+      const readCell = (header) => {
+        const column = headers.get(header);
+        return column ? String(row.getCell(column).text || '').trim() : '';
+      };
+      const name = readCell('name');
+      const email = readCell('email');
+      const phone = readCell('phone');
 
       if (name) {
+        if (name.length > 100 ||
+          (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 100)) ||
+          phone.length > 20) {
+          invalidRows.push(rowNumber);
+          return;
+        }
+
         companies.push({
-          companyId: req.user.companyId,
-          name: name.toString(),
-          email: email ? email.toString() : null,
-          phone: phone ? phone.toString() : null,
-          address: address ? address.toString() : null,
+          companyId: targetCompanyId,
+          name,
+          email: email || null,
+          phone: phone || null,
+          address: readCell('address') || null,
         });
       }
     });
 
-    if (companies.length > 0) {
-      if (req.user.role === 'SUPERADMIN' && !req.user.companyId) {
-         return res.status(400).json({ message: 'SUPERADMIN cannot import without a company scope' });
-      }
-      await prisma.clientCompany.createMany({
-        data: companies,
-        skipDuplicates: true,
+    if (invalidRows.length > 0) {
+      return res.status(400).json({
+        message: `Invalid client data in worksheet row${invalidRows.length > 1 ? 's' : ''}: ${invalidRows.join(', ')}.`,
       });
     }
+    if (companies.length === 0) {
+      return res.status(400).json({ message: 'No companies with a name were found in the worksheet.' });
+    }
 
-    res.json({ message: `Successfully imported ${companies.length} companies` });
+    const existingCompanies = await prisma.clientCompany.findMany({
+      where: { companyId: targetCompanyId },
+      select: { name: true },
+    });
+    const existingNames = new Set(existingCompanies.map((company) => company.name.trim().toLowerCase()));
+    const uniqueCompanies = companies.filter((company) => {
+      const normalizedName = company.name.trim().toLowerCase();
+      if (existingNames.has(normalizedName)) {
+        return false;
+      }
+      existingNames.add(normalizedName);
+      return true;
+    });
+
+    const result = await prisma.clientCompany.createMany({
+      data: uniqueCompanies,
+      skipDuplicates: true,
+    });
+
+    res.json({
+      message: `Imported ${result.count} companies.`,
+      imported: result.count,
+      skipped: companies.length - result.count,
+    });
   } catch (error) {
     console.error('Error importing companies:', error);
     res.status(500).json({ message: 'Server error importing Excel' });
@@ -142,18 +240,45 @@ router.get('/:id', authenticate, async (req, res) => {
 // Create client company
 router.post('/', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res) => {
   const { name, email, phone, address } = req.body;
+  const normalizedName = typeof name === 'string' ? name.trim() : '';
+  const normalizedEmail = typeof email === 'string' ? email.trim() : '';
+  if (!normalizedName || normalizedName.length > 100 ||
+    (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) ||
+    (email !== undefined && email !== null && typeof email !== 'string') ||
+    (phone !== undefined && phone !== null && typeof phone !== 'string') ||
+    (address !== undefined && address !== null && typeof address !== 'string') ||
+    (phone && String(phone).length > 20) ||
+    (normalizedEmail && normalizedEmail.length > 100)) {
+    return res.status(400).json({ message: 'Provide a company name and valid contact details.' });
+  }
   if (!req.user.companyId && req.user.role !== 'SUPERADMIN') {
     return res.status(403).json({ message: 'User not assigned to a company' });
   }
   
-  const targetCompanyId = req.user.role === 'SUPERADMIN' ? (req.body.companyId || req.user.companyId) : req.user.companyId;
-  if (!targetCompanyId) {
+  const targetCompanyId = Number(
+    req.user.role === 'SUPERADMIN' ? (req.body.companyId || req.user.companyId) : req.user.companyId
+  );
+  if (!Number.isInteger(targetCompanyId) || targetCompanyId <= 0) {
     return res.status(400).json({ message: 'companyId is required for creation' });
   }
 
   try {
+    const tenant = await prisma.company.findFirst({
+      where: { id: targetCompanyId, isActive: true },
+      select: { id: true },
+    });
+    if (!tenant) {
+      return res.status(400).json({ message: 'The selected company does not exist or is inactive.' });
+    }
+
     const company = await prisma.clientCompany.create({
-      data: { companyId: targetCompanyId, name, email, phone, address },
+      data: {
+        companyId: targetCompanyId,
+        name: normalizedName,
+        email: normalizedEmail || null,
+        phone: phone ? String(phone).trim() : null,
+        address: address ? String(address).trim() : null,
+      },
     });
     res.status(201).json(company);
   } catch (error) {
@@ -164,8 +289,20 @@ router.post('/', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res
 
 // Update client company
 router.put('/:id', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = Number(req.params.id);
   const { name, email, phone, address } = req.body;
+  const normalizedName = typeof name === 'string' ? name.trim() : '';
+  const normalizedEmail = typeof email === 'string' ? email.trim() : '';
+  if (!Number.isInteger(id) || id <= 0 ||
+    !normalizedName || normalizedName.length > 100 ||
+    (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) ||
+    (email !== undefined && email !== null && typeof email !== 'string') ||
+    (phone !== undefined && phone !== null && typeof phone !== 'string') ||
+    (address !== undefined && address !== null && typeof address !== 'string') ||
+    (phone && String(phone).length > 20) ||
+    (normalizedEmail && normalizedEmail.length > 100)) {
+    return res.status(400).json({ message: 'Provide a valid company ID, name, and contact details.' });
+  }
   try {
     const whereClause = req.user.role === 'SUPERADMIN' ? { id } : { id, companyId: req.user.companyId };
     const existing = await prisma.clientCompany.findFirst({ where: whereClause });
@@ -173,7 +310,12 @@ router.put('/:id', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, r
 
     const company = await prisma.clientCompany.update({
       where: { id },
-      data: { name, email, phone, address },
+      data: {
+        name: normalizedName,
+        email: normalizedEmail || null,
+        phone: phone ? String(phone).trim() : null,
+        address: address ? String(address).trim() : null,
+      },
     });
     res.json(company);
   } catch (error) {

@@ -10,6 +10,9 @@ function buildPDF(quotation, doc) {
   const CONTENT = PAGE_W - MARGIN * 2; // 515
 
   const company = quotation.company || {};
+  const client = quotation.clientCompany || {};
+  const template = quotation.template || {};
+  const currencyCode = company.currencyCode || 'USD';
 
   // ─────────────────────────────────────────────────────────────────────────────
   // HEADER BANNER
@@ -26,7 +29,7 @@ function buildPDF(quotation, doc) {
     .fillColor('#94a3b8')
     .fontSize(9)
     .font('Helvetica')
-    .text('Quotation Management System', MARGIN, 44, { width: CONTENT, align: 'center' });
+    .text(company.name || 'Quotation Management System', MARGIN, 44, { width: CONTENT, align: 'center' });
 
   // ─────────────────────────────────────────────────────────────────────────────
   // INFO SECTION  (two columns: Quotation Details | Company Information)
@@ -67,21 +70,21 @@ function buildPDF(quotation, doc) {
       .text(value, COL_LEFT + 82, y, { width: COL_W_LEFT - 82 });
   });
 
-  // ── Right: Company Information ──
+  // ── Right: Client Information ──
   doc
     .fillColor('#0f172a')
     .fontSize(11)
     .font('Helvetica-Bold')
-    .text('Company Information', COL_RIGHT, INFO_TOP, { width: COL_W_RIGHT });
+    .text('Prepared For', COL_RIGHT, INFO_TOP, { width: COL_W_RIGHT });
 
-  const companyLines = [
-    ['Name',    company.name],
-    ['Address', company.address],
-    ['Email',   company.email],
-    ['Phone',   company.phone],
-  ].filter(([, v]) => v);
+  const clientLines = [
+    ['Name', client.name],
+    ['Address', client.address],
+    ['Email', client.email],
+    ['Phone', client.phone],
+  ].filter(([, value]) => value);
 
-  companyLines.forEach(([label, value], i) => {
+  clientLines.forEach(([label, value], i) => {
     const y = INFO_TOP + 18 + i * LINE_H;
     doc
       .fillColor('#64748b')
@@ -97,7 +100,7 @@ function buildPDF(quotation, doc) {
   // ─────────────────────────────────────────────────────────────────────────────
   // DIVIDER
   // ─────────────────────────────────────────────────────────────────────────────
-  const DIVIDER_Y = INFO_TOP + 18 + Math.max(details.length, companyLines.length) * LINE_H + 10;
+  const DIVIDER_Y = INFO_TOP + 18 + Math.max(details.length, clientLines.length) * LINE_H + 10;
   doc.moveTo(MARGIN, DIVIDER_Y).lineTo(PAGE_W - MARGIN, DIVIDER_Y).strokeColor('#e2e8f0').lineWidth(1).stroke();
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -184,10 +187,10 @@ function buildPDF(quotation, doc) {
     doc.text(String(item.quantity), C.qty.x + CELL_PAD, cy, {
       width: C.qty.w - CELL_PAD * 2, align: 'center', lineBreak: false,
     });
-    doc.text(parseFloat(item.unitPrice).toFixed(2), C.unitPrice.x, cy, {
+    doc.text(`${currencyCode} ${parseFloat(item.unitPrice).toFixed(2)}`, C.unitPrice.x, cy, {
       width: C.unitPrice.w - CELL_PAD, align: 'right', lineBreak: false,
     });
-    doc.text(parseFloat(item.totalPrice).toFixed(2), C.total.x, cy, {
+    doc.text(`${currencyCode} ${parseFloat(item.totalPrice).toFixed(2)}`, C.total.x, cy, {
       width: C.total.w - CELL_PAD, align: 'right', lineBreak: false,
     });
 
@@ -200,29 +203,57 @@ function buildPDF(quotation, doc) {
   // ─────────────────────────────────────────────────────────────────────────────
   // TOTAL AMOUNT ROW
   // ─────────────────────────────────────────────────────────────────────────────
-  const totalY = rowY + 6;
+  const summaryTop = rowY + 6;
+  const subtotalAmount = Number(quotation.subtotalAmount || 0);
+  const discountValue = Number(quotation.discountValue || 0);
+  const discountAmount = quotation.discountType === 'PERCENTAGE'
+    ? subtotalAmount * discountValue / 100
+    : quotation.discountType === 'FIXED'
+      ? discountValue
+      : 0;
+  const discountedSubtotal = subtotalAmount - discountAmount;
+  const taxRate = Number(quotation.taxRate || 0);
+  const taxAmount = quotation.isTaxInclusive
+    ? discountedSubtotal * taxRate / (100 + taxRate)
+    : discountedSubtotal * taxRate / 100;
+  const summaryRows = [
+    { label: 'Subtotal:', amount: subtotalAmount },
+    ...(discountAmount > 0 ? [{ label: 'Discount:', amount: -discountAmount }] : []),
+    ...(taxRate > 0 ? [{ label: `Tax (${taxRate}%${quotation.isTaxInclusive ? ', included' : ''}):`, amount: taxAmount }] : []),
+  ];
+
+  summaryRows.forEach((row, index) => {
+    const y = summaryTop + index * 18;
+    doc.fillColor('#64748b').fontSize(9).font('Helvetica')
+      .text(row.label, MARGIN + CELL_PAD, y, {
+        width: CONTENT - C.total.w - CELL_PAD * 2,
+        align: 'right',
+        lineBreak: false,
+      });
+    doc.fillColor('#334155').fontSize(9).font('Helvetica')
+      .text(`${currencyCode} ${row.amount.toFixed(2)}`, C.total.x, y, {
+        width: C.total.w - CELL_PAD,
+        align: 'right',
+        lineBreak: false,
+      });
+  });
+
+  const totalY = summaryTop + summaryRows.length * 18;
   doc.rect(MARGIN, totalY, CONTENT, 26).fill('#f1f5f9');
 
-  doc
-    .fillColor('#0f172a')
-    .fontSize(11)
-    .font('Helvetica-Bold')
+  doc.fillColor('#0f172a').fontSize(11).font('Helvetica-Bold')
     .text('Total Amount:', MARGIN + CELL_PAD, totalY + 7, {
       width: CONTENT - C.total.w - CELL_PAD * 2,
       align: 'right',
       lineBreak: false,
     });
 
-  doc
-    .fillColor('#0369a1')
-    .fontSize(12)
-    .font('Helvetica-Bold')
-    .text(
-      parseFloat(quotation.totalAmount).toFixed(2),
-      C.total.x,
-      totalY + 7,
-      { width: C.total.w - CELL_PAD, align: 'right', lineBreak: false }
-    );
+  doc.fillColor('#0369a1').fontSize(12).font('Helvetica-Bold')
+    .text(`${currencyCode} ${parseFloat(quotation.totalAmount).toFixed(2)}`, C.total.x, totalY + 7, {
+      width: C.total.w - CELL_PAD,
+      align: 'right',
+      lineBreak: false,
+    });
 
   // ─────────────────────────────────────────────────────────────────────────────
   // FOOTER
@@ -235,19 +266,27 @@ function buildPDF(quotation, doc) {
   doc.moveTo(MARGIN, FOOTER_Y).lineTo(PAGE_W - MARGIN, FOOTER_Y).strokeColor('#e2e8f0').lineWidth(1).stroke();
 
   // Terms
+  const terms = template.termsAndConditions
+    ? template.termsAndConditions.split(/\r?\n/).filter(Boolean).slice(0, 3)
+    : [
+      '1. All payments should be made to the company bank account.',
+      '2. This quotation is valid for 30 days from the date of issue.',
+      '3. Prices are inclusive of applicable taxes unless stated otherwise.',
+    ];
   doc.fillColor('#64748b').fontSize(7.5).font('Helvetica-Bold')
     .text('Terms & Conditions:', MARGIN, FOOTER_Y + 8);
-  doc.font('Helvetica').fillColor('#64748b')
-    .text('1. All payments should be made to the company bank account.', MARGIN, FOOTER_Y + 19)
-    .text('2. This quotation is valid for 30 days from the date of issue.', MARGIN, FOOTER_Y + 29)
-    .text('3. Prices are inclusive of applicable taxes unless stated otherwise.', MARGIN, FOOTER_Y + 39);
+  doc.font('Helvetica').fillColor('#64748b');
+  terms.forEach((term, index) => {
+    doc.text(term, MARGIN, FOOTER_Y + 19 + index * 10, { width: CONTENT, lineBreak: false });
+  });
 
   // Thank you note
+  const footerText = template.footerText || 'Thank you for your business!';
   doc
     .fillColor('#1e293b')
     .fontSize(10)
     .font('Helvetica-Oblique')
-    .text('Thank you for your business!', MARGIN, FOOTER_Y + 54, {
+    .text(footerText, MARGIN, FOOTER_Y + 54, {
       width: CONTENT,
       align: 'center',
     });

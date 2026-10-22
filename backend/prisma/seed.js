@@ -4,18 +4,22 @@ const bcrypt = require('bcryptjs');
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Seeding database...');
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Demo seeding is disabled in production. Use prisma:bootstrap-admin to create the first administrator.');
+  }
 
-  // Clear existing data
-  await prisma.quotationAuditLog.deleteMany();
-  await prisma.quotationItem.deleteMany();
-  await prisma.quotation.deleteMany();
-  await prisma.quotationTemplate.deleteMany();
-  await prisma.product.deleteMany();
-  await prisma.clientCompany.deleteMany();
-  await prisma.company.updateMany({ data: { adminUserId: null } }); // break foreign key
-  await prisma.user.deleteMany();
-  await prisma.company.deleteMany();
+  const existingRecords = await Promise.all([
+    prisma.user.count(),
+    prisma.company.count(),
+    prisma.clientCompany.count(),
+    prisma.product.count(),
+    prisma.quotation.count(),
+  ]);
+  if (existingRecords.some((count) => count > 0)) {
+    throw new Error('The database already contains application data. Demo seeding will not overwrite existing data.');
+  }
+
+  console.log('🌱 Seeding database...');
 
   // Create Super Admin
   const spadminHash = await bcrypt.hash('pass', 10);

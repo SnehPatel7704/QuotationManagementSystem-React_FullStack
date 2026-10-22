@@ -20,14 +20,14 @@ import { FiSave, FiX, FiPlus, FiTrash2, FiSearch } from 'react-icons/fi';
 const QuotationCreate = () => {
   const navigate = useNavigate();
   
-  const { companyProfile } = useAuth();
-  const currencySymbol = companyProfile?.currencySymbol || 'OMR';
+  const { user, companyProfile } = useAuth();
 
   // State for form data
   const [formData, setFormData] = useState({
     companyId: '',
     followUpDate: '',
-    taxRate: companyProfile?.defaultTaxRate || 0,
+    taxRate: companyProfile?.defaultTaxRate ?? 0,
+    isTaxInclusive: false,
     items: [{ productId: '', quantity: 1, unitPrice: 0 }],
   });
 
@@ -36,6 +36,10 @@ const QuotationCreate = () => {
   const [products, setProducts] = useState([]);
   const [companySearch, setCompanySearch] = useState('');
   const [productSearches, setProductSearches] = useState(['']);
+  const selectedClientCompany = companies.find((company) => company.id === Number(formData.companyId));
+  const currencySymbol = user?.role === 'SUPERADMIN'
+    ? selectedClientCompany?.tenantCompany?.currencySymbol || 'USD'
+    : companyProfile?.currencySymbol || 'OMR';
 
   // State for UI
   const [loading, setLoading] = useState(false);
@@ -100,10 +104,18 @@ const QuotationCreate = () => {
   };
 
   // Calculate quotation total
+  const calculateQuotationSubtotal = () => formData.items.reduce((total, item) => {
+    return total + calculateItemTotal(item.quantity, item.unitPrice);
+  }, 0);
+
+  const calculateQuotationTax = () => (
+    formData.isTaxInclusive
+      ? 0
+      : calculateQuotationSubtotal() * (Number(formData.taxRate) || 0) / 100
+  );
+
   const calculateQuotationTotal = () => {
-    return formData.items.reduce((total, item) => {
-      return total + calculateItemTotal(item.quantity, item.unitPrice);
-    }, 0);
+    return calculateQuotationSubtotal() + calculateQuotationTax();
   };
 
   // Filter companies based on search
@@ -115,7 +127,8 @@ const QuotationCreate = () => {
   const getFilteredProducts = (index) => {
     const search = productSearches[index] || '';
     return products.filter((product) =>
-      product.name?.toLowerCase().includes(search.toLowerCase())
+      product.name?.toLowerCase().includes(search.toLowerCase()) &&
+      (user?.role !== 'SUPERADMIN' || !selectedClientCompany || product.companyId === selectedClientCompany.companyId)
     );
   };
 
@@ -248,6 +261,10 @@ const QuotationCreate = () => {
       }
     });
 
+    if (!Number.isFinite(Number(formData.taxRate)) || Number(formData.taxRate) < 0) {
+      newErrors.taxRate = 'Tax rate must be a non-negative number.';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -265,18 +282,12 @@ const QuotationCreate = () => {
     try {
       setLoading(true);
 
-      // Get user ID from localStorage (assuming it's stored there)
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      const userId = user.id || 1;
-
       const quotationData = {
         quotation: {
           companyId: Number(formData.companyId),
           followUpDate: formData.followUpDate || null,
-          createdBy: userId,
           taxRate: formData.taxRate,
-          // Set status based on button clicked
-          status: saveAsDraft ? 'DRAFT' : null, // null will default to PENDING_APPROVAL in backend
+          isTaxInclusive: formData.isTaxInclusive,
         },
         items: formData.items.map((item) => ({
           productId: Number(item.productId),
@@ -285,7 +296,22 @@ const QuotationCreate = () => {
         })),
       };
 
-      await quotationService.create(quotationData);
+      const createResponse = await quotationService.create(quotationData);
+      if (!saveAsDraft) {
+        try {
+          const submitResponse = await quotationService.submit(createResponse.data.id);
+          if (submitResponse.data.notificationsSent === false) {
+            window.alert(submitResponse.data.notificationMessage || 'Quotation submitted, but email notifications could not be delivered.');
+          }
+        } catch (submitError) {
+          window.alert(
+            `Quotation ${createResponse.data.quotationNumber} was saved as a draft, but could not be submitted for approval. ${submitError.response?.data?.message || submitError.message}`
+          );
+          setIsDirty(false);
+          navigate(`/quotations/${createResponse.data.id}`);
+          return;
+        }
+      }
       setIsDirty(false);
       navigate('/quotations');
     } catch (err) {
@@ -381,7 +407,7 @@ const QuotationCreate = () => {
               <option value="">Select a company</option>
               {filteredCompanies.map((company) => (
                 <option key={company.id} value={company.id}>
-                  {company.name}
+                  {company.name}{user?.role === 'SUPERADMIN' && company.tenantCompany?.name ? ` (${company.tenantCompany.name})` : ''}
                 </option>
               ))}
             </select>
@@ -400,6 +426,35 @@ const QuotationCreate = () => {
             value={formData.followUpDate}
             onChange={handleFollowUpDateChange}
           />
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FormInput
+              label="Tax Rate (%)"
+              name="taxRate"
+              type="number"
+              min="0"
+              max="999.99"
+              step="0.01"
+              value={formData.taxRate}
+              error={errors.taxRate}
+              onChange={(event) => {
+                setFormData({ ...formData, taxRate: event.target.value });
+                setIsDirty(true);
+              }}
+            />
+            <label className="flex items-center gap-3 pt-7 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={formData.isTaxInclusive}
+                onChange={(event) => {
+                  setFormData({ ...formData, isTaxInclusive: event.target.checked });
+                  setIsDirty(true);
+                }}
+                className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              Prices include tax
+            </label>
+          </div>
 
           {/* Items Section */}
           <div className="space-y-4">
@@ -542,13 +597,16 @@ const QuotationCreate = () => {
           {/* Quotation Total */}
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
             <div className="flex justify-end">
-              <div className="text-right">
-                <span className="text-base sm:text-lg text-gray-600 dark:text-gray-400">
-                  Quotation Total:
-                </span>
-                <span className="ml-2 sm:ml-4 text-xl sm:text-2xl font-bold text-primary-600 dark:text-primary-400">
-                  {currencySymbol} {quotationTotal.toFixed(2)}
-                </span>
+              <div className="space-y-1 text-right">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Subtotal: {currencySymbol} {calculateQuotationSubtotal().toFixed(2)}
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {formData.isTaxInclusive ? 'Tax included' : `Tax (${Number(formData.taxRate) || 0}%): ${currencySymbol} ${calculateQuotationTax().toFixed(2)}`}
+                </p>
+                <p className="text-lg font-bold text-primary-600 dark:text-primary-400">
+                  Quotation Total: {currencySymbol} {quotationTotal.toFixed(2)}
+                </p>
               </div>
             </div>
           </div>

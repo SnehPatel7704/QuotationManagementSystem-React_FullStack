@@ -35,7 +35,17 @@ Configure your MySQL database connection string in `backend/.env`:
 DATABASE_URL="mysql://username:password@localhost:3306/quotation_db"
 JWT_SECRET="your-jwt-secret-key-change-in-production"
 PORT=8080
+CORS_ORIGINS="http://localhost:3000"
+FRONTEND_URL="http://localhost:3000"
 ```
+
+For production, set a unique `JWT_SECRET` with at least 32 characters, configure
+`CORS_ORIGINS` with the exact frontend origins (comma-separated, no trailing
+slashes), set `FRONTEND_URL` to the deployed frontend, and set
+`REACT_APP_API_URL` in the frontend build environment to the deployed backend
+API URL. Configure `MAIL_USERNAME`, `MAIL_PASSWORD`, and optionally `MAIL_FROM`
+to enable email delivery. Production startup rejects missing CORS/frontend
+origins and short JWT secrets.
 
 ### Step 3: Setup the Database Schema & Seed Data
 Ensure MySQL is running and the database specified in your connection string is created (or will be auto-created by Prisma). Then run:
@@ -46,6 +56,21 @@ npm run prisma:push
 npm run prisma:seed
 cd ..
 ```
+
+The demo seed is for an empty development database only. It refuses to run in
+production or when users already exist, and it does not erase existing data.
+For a production database, set `BOOTSTRAP_ADMIN_USERNAME`,
+`BOOTSTRAP_ADMIN_EMAIL`, and a unique `BOOTSTRAP_ADMIN_PASSWORD` of at least 12
+characters in `backend/.env`, then run:
+
+```bash
+cd backend
+npm run prisma:bootstrap-admin
+```
+
+Remove the bootstrap password from the deployment environment after this
+one-time command. The initial Super Admin can then create the tenant and its
+first Admin from the application.
 
 ### Step 4: Start the application
 Run the start-all script from the root directory to launch both servers simultaneously:
@@ -74,16 +99,17 @@ Once running, open `http://localhost:3000` in your browser.
 
 ## 🔑 Default Credentials
 
-The following credentials are seeded by default for testing purposes:
+The demo seed creates the following credentials for local testing only:
 
 | Role | Username | Password | Access Level |
 |------|----------|----------|--------------|
 | **Super Admin** | `spadmin` | `pass` | Full system access & User management |
-| **Admin** | `admin` | `password` | Create, edit, approve quotations, manage companies & products |
-| **User** | `user` | `password` | View only access |
-| **User 2** | `user2` | `password123` | View only access |
+| **Alpha Admin** | `admin_alpha` | `password` | Create, edit, approve quotations, manage companies & products |
+| **Alpha User** | `user_alpha` | `password123` | View only access |
+| **Beta Admin** | `admin_beta` | `password` | Create, edit, approve quotations, manage companies & products |
+| **Beta User** | `user_beta` | `password123` | View only access |
 
-> ⚠️ **Important:** Make sure to change these passwords/delete these seed users before moving to production!
+> ⚠️ **Important:** Never use demo-seed credentials in production. Use the one-time administrator bootstrap above instead.
 
 ---
 
@@ -96,16 +122,19 @@ The following credentials are seeded by default for testing purposes:
 - **Quotation Management**
   - Create and edit quotations.
   - Add items (products with custom quantities and prices).
-  - Status tracking (Draft, Pending Approval, Approved, Sent, Rejected).
+  - Draft, submission, approval, rejection-with-revision, and client delivery status flow.
   - Revision history and comprehensive **Audit Trail Timeline** for all actions.
-  - PDF generation and dynamic **email dispatch with PDF attachments**.
+  - Client-branded PDF exports and email delivery, available only after approval.
+  - Configurable tax rate and tax-inclusive pricing with totals shown before submission.
 - **Company & Product Directory**
   - Manage companies/clients.
   - Manage product catalogs with base prices.
-  - **Excel Import/Export** capabilities for bulk data management.
+  - Excel import/export supports exported workbook headers, duplicate skipping, and bounded upload sizes.
+  - Super Admin workflows support selecting a tenant when managing users, clients, and products.
 - **Dashboard Analytics**
   - View key metrics (Total Revenue, Approved Quotes, Win Rate).
   - Interactive charts (Revenue trends and Status distribution) using Recharts.
+  - Recent quotation activity and follow-ups filtered to the selected date range.
 - **Theme Support**
   - Light/Dark mode toggle with persistent preference.
 - **Search, Filters & Pagination**
@@ -184,8 +213,12 @@ quotation-system/
 - `PUT /api/quotations/:id` - Update existing quotation (Admin/Super Admin only)
 - `DELETE /api/quotations/:id` - Delete quotation (Admin/Super Admin only)
 - `POST /api/quotations/:id/approve` - Approve quotation (Admin/Super Admin only)
+- `POST /api/quotations/:id/submit` - Submit a draft for approval
+- `POST /api/quotations/:id/reject` - Reject a pending quotation and create a draft revision
 - `POST /api/quotations/:id/send` - Email quotation to company client
 - `GET /api/quotations/:id/pdf` - Download PDF version of quotation
+- `GET /api/quotations/:id/revisions` - Read quotation revision history
+- `POST /api/quotations/:id/clone` - Create a new draft by cloning a quotation (Admin/Super Admin only)
 
 ### User Management (Super Admin only)
 - `GET /api/superadmin/users` - List all users

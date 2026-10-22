@@ -10,13 +10,38 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const FROM_EMAIL = 'noreply@quotationsystem.com';
+const FROM_EMAIL = process.env.MAIL_FROM || process.env.MAIL_USERNAME || 'noreply@quotationsystem.com';
+const FRONTEND_URL = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character]);
+}
+
+async function deliverEmail(mailOptions, description) {
+  if (!process.env.MAIL_USERNAME || !process.env.MAIL_PASSWORD) {
+    return { sent: false, message: 'Email delivery is not configured.' };
+  }
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`${description} sent to ${mailOptions.to}`);
+    return { sent: true };
+  } catch (error) {
+    console.error(`Error sending ${description.toLowerCase()}:`, error);
+    return { sent: false, message: 'Email delivery failed.' };
+  }
+}
 
 /**
  * Send quotation review alert email to admin
  */
 async function sendQuotationToAdmin(quotation, adminEmail) {
-  if (!process.env.MAIL_USERNAME) return;
   const mailOptions = {
     from: FROM_EMAIL,
     to: adminEmail,
@@ -24,12 +49,7 @@ async function sendQuotationToAdmin(quotation, adminEmail) {
     text: `A new quotation ${quotation.quotationNumber} has been created and is ready for your review.\n\nTotal Amount: ${quotation.totalAmount}\nStatus: ${quotation.status}`,
   };
 
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`Email notification sent to Admin: ${adminEmail}`);
-  } catch (error) {
-    console.error('Error sending admin notification email:', error);
-  }
+  return deliverEmail(mailOptions, 'Admin notification');
 }
 
 const { generateQuotationPDFBuffer } = require('./pdfService');
@@ -38,13 +58,16 @@ const { generateQuotationPDFBuffer } = require('./pdfService');
  * Send approved quotation details to client
  */
 async function sendQuotationToClient(quotation, clientEmail) {
-  if (!process.env.MAIL_USERNAME) return;
+  if (!process.env.MAIL_USERNAME || !process.env.MAIL_PASSWORD) {
+    return { sent: false, message: 'Email delivery is not configured.' };
+  }
   
   let pdfBuffer;
   try {
     pdfBuffer = await generateQuotationPDFBuffer(quotation);
   } catch (err) {
     console.error('Failed to generate PDF for email attachment', err);
+    return { sent: false, message: 'The quotation PDF could not be generated.' };
   }
 
   const mailOptions = {
@@ -61,28 +84,22 @@ async function sendQuotationToClient(quotation, clientEmail) {
     ] : [],
   };
 
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`Quotation email sent to client: ${clientEmail}`);
-  } catch (error) {
-    console.error('Error sending client quotation email:', error);
-  }
+  return deliverEmail(mailOptions, 'Quotation email');
 }
 
 /**
  * Send approval email to creator
  */
 async function sendApprovalNotification(quotation, creator, approverName) {
-  if (!process.env.MAIL_USERNAME) return;
   const approvalDate = new Date(quotation.updatedAt).toLocaleString('en-GB', { hour12: false });
-  const quotationLink = `http://localhost:3000/quotations/${quotation.id}`;
+  const quotationLink = `${FRONTEND_URL}/quotations/${encodeURIComponent(quotation.id)}`;
 
   const htmlContent = `
     <h2>Quotation Approved</h2>
-    <p>Your quotation <strong>${quotation.quotationNumber}</strong> has been approved.</p>
+    <p>Your quotation <strong>${escapeHtml(quotation.quotationNumber)}</strong> has been approved.</p>
     <p><strong>Approved Date:</strong> ${approvalDate}</p>
-    <p><strong>Approved By:</strong> ${approverName || 'Admin'}</p>
-    <p><a href="${quotationLink}">Click here to view the quotation</a></p>
+    <p><strong>Approved By:</strong> ${escapeHtml(approverName || 'Admin')}</p>
+    <p><a href="${escapeHtml(quotationLink)}">Click here to view the quotation</a></p>
   `;
 
   const mailOptions = {
@@ -92,29 +109,23 @@ async function sendApprovalNotification(quotation, creator, approverName) {
     html: htmlContent,
   };
 
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`Approval email sent to creator: ${creator.email}`);
-  } catch (error) {
-    console.error('Error sending approval notification email:', error);
-  }
+  return deliverEmail(mailOptions, 'Approval notification');
 }
 
 /**
  * Send rejection email to creator
  */
 async function sendRejectionNotification(quotation, creator, rejectionReason, revisionId) {
-  if (!process.env.MAIL_USERNAME) return;
   const rejectionDate = new Date(quotation.updatedAt).toLocaleString('en-GB', { hour12: false });
-  const revisionLink = `http://localhost:3000/quotations/${revisionId}`;
+  const revisionLink = `${FRONTEND_URL}/quotations/${encodeURIComponent(revisionId)}`;
 
   const htmlContent = `
     <h2>Quotation Rejected</h2>
-    <p>Your quotation <strong>${quotation.quotationNumber}</strong> has been rejected.</p>
+    <p>Your quotation <strong>${escapeHtml(quotation.quotationNumber)}</strong> has been rejected.</p>
     <p><strong>Rejection Date:</strong> ${rejectionDate}</p>
-    <p><strong>Reason:</strong> ${rejectionReason}</p>
-    <p>A new revision (Revision ${quotation.revisionNumber + 1}) has been created for you to adjust.</p>
-    <p><a href="${revisionLink}">Click here to view and edit the new revision</a></p>
+    <p><strong>Reason:</strong> ${escapeHtml(rejectionReason)}</p>
+    <p>A new revision (Revision ${Number(quotation.revisionNumber) + 1}) has been created for you to adjust.</p>
+    <p><a href="${escapeHtml(revisionLink)}">Click here to view and edit the new revision</a></p>
   `;
 
   const mailOptions = {
@@ -124,12 +135,7 @@ async function sendRejectionNotification(quotation, creator, rejectionReason, re
     html: htmlContent,
   };
 
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`Rejection email sent to creator: ${creator.email}`);
-  } catch (error) {
-    console.error('Error sending rejection notification email:', error);
-  }
+  return deliverEmail(mailOptions, 'Rejection notification');
 }
 
 module.exports = {

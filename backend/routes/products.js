@@ -3,7 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const { authenticate, authorize } = require('../middleware/auth');
 const multer = require('multer');
 const ExcelJS = require('exceljs');
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -11,7 +11,18 @@ const prisma = new PrismaClient();
 // Get all products
 router.get('/', authenticate, async (req, res) => {
   try {
-    const whereClause = req.user.role === 'SUPERADMIN' ? {} : { companyId: req.user.companyId };
+    let whereClause = { companyId: req.user.companyId };
+    if (req.user.role === 'SUPERADMIN') {
+      if (req.query.companyId !== undefined) {
+        const companyId = Number(req.query.companyId);
+        if (!Number.isInteger(companyId) || companyId <= 0) {
+          return res.status(400).json({ message: 'companyId must be a positive integer.' });
+        }
+        whereClause = { companyId };
+      } else {
+        whereClause = {};
+      }
+    }
     const products = await prisma.product.findMany({
       where: whereClause,
       orderBy: { name: 'asc' },
@@ -26,7 +37,18 @@ router.get('/', authenticate, async (req, res) => {
 // Export products to Excel
 router.get('/export-excel', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res) => {
   try {
-    const whereClause = req.user.role === 'SUPERADMIN' ? {} : { companyId: req.user.companyId };
+    let whereClause = { companyId: req.user.companyId };
+    if (req.user.role === 'SUPERADMIN') {
+      if (req.query.companyId !== undefined) {
+        const companyId = Number(req.query.companyId);
+        if (!Number.isInteger(companyId) || companyId <= 0) {
+          return res.status(400).json({ message: 'companyId must be a positive integer.' });
+        }
+        whereClause = { companyId };
+      } else {
+        whereClause = {};
+      }
+    }
     const products = await prisma.product.findMany({
       where: whereClause,
       orderBy: { name: 'asc' },
@@ -78,46 +100,103 @@ router.post('/import-excel', authenticate, authorize('ADMIN', 'SUPERADMIN'), upl
     if (!worksheet) {
       return res.status(400).json({ message: 'Invalid Excel file' });
     }
+    if (worksheet.rowCount > 5001) {
+      return res.status(413).json({ message: 'The worksheet cannot contain more than 5,000 data rows.' });
+    }
+
+    const headers = new Map();
+    worksheet.getRow(1).eachCell((cell, column) => {
+      headers.set(String(cell.text || cell.value || '').trim().toLowerCase(), column);
+    });
+    const nameColumn = headers.get('name');
+    const priceColumn = headers.get('base price');
+    if (!nameColumn || !priceColumn) {
+      return res.status(400).json({ message: 'The worksheet must include Name and Base Price columns.' });
+    }
+
+    const targetCompanyId = req.user.role === 'SUPERADMIN'
+      ? Number(req.body.companyId)
+      : req.user.companyId;
+    if (!Number.isInteger(targetCompanyId) || targetCompanyId <= 0) {
+      return res.status(400).json({ message: 'A valid companyId is required for this import.' });
+    }
+    const tenant = await prisma.company.findFirst({
+      where: { id: targetCompanyId, isActive: true },
+      select: { id: true },
+    });
+    if (!tenant) {
+      return res.status(400).json({ message: 'The selected company does not exist or is inactive.' });
+    }
 
     const products = [];
-    let isHeader = true;
+    const invalidRows = [];
 
     worksheet.eachRow((row, rowNumber) => {
-      if (isHeader) {
-        isHeader = false;
+      if (rowNumber === 1) {
         return;
       }
 
-      // Expected columns: Name (1 or 2), Description, Base Price, Category
-      // Sometimes ID is 1, so Name is 2. Let's assume a strict format without ID or ignore ID.
-      // We'll map by column index: 1: Name, 2: Description, 3: Base Price, 4: Category
-      const name = row.getCell(1).value;
-      const description = row.getCell(2).value;
-      const basePrice = row.getCell(3).value;
-      const category = row.getCell(4).value;
-
-      if (name && basePrice) {
-        products.push({
-          companyId: req.user.companyId,
-          name: name.toString(),
-          description: description ? description.toString() : null,
-          basePrice: parseFloat(basePrice) || 0,
-          category: category ? category.toString() : null,
-        });
+      const readCell = (header) => {
+        const column = headers.get(header);
+        return column ? String(row.getCell(column).text || '').trim() : '';
+      };
+      const name = readCell('name');
+      const rawPrice = readCell('base price');
+      const category = readCell('category');
+      if (!name && !rawPrice) {
+        return;
       }
+
+      const basePrice = Number(rawPrice);
+      if (!name || name.length > 100 || !rawPrice ||
+        !Number.isFinite(basePrice) || basePrice < 0 || basePrice > 99999999.99 ||
+        category.length > 50) {
+        invalidRows.push(rowNumber);
+        return;
+      }
+
+      products.push({
+        companyId: targetCompanyId,
+        name,
+        description: readCell('description') || null,
+        basePrice,
+        category: category || null,
+      });
     });
 
-    if (products.length > 0) {
-      if (req.user.role === 'SUPERADMIN' && !req.user.companyId) {
-         return res.status(400).json({ message: 'SUPERADMIN cannot import without a company scope context here' });
-      }
-      await prisma.product.createMany({
-        data: products,
-        skipDuplicates: true, // Avoid breaking on existing names if we add a unique constraint later
+    if (invalidRows.length > 0) {
+      return res.status(400).json({
+        message: `Invalid product data in worksheet row${invalidRows.length > 1 ? 's' : ''}: ${invalidRows.join(', ')}.`,
       });
     }
+    if (products.length === 0) {
+      return res.status(400).json({ message: 'No products with a name and base price were found in the worksheet.' });
+    }
 
-    res.json({ message: `Successfully imported ${products.length} products` });
+    const existingProducts = await prisma.product.findMany({
+      where: { companyId: targetCompanyId },
+      select: { name: true },
+    });
+    const existingNames = new Set(existingProducts.map((product) => product.name.trim().toLowerCase()));
+    const uniqueProducts = products.filter((product) => {
+      const normalizedName = product.name.trim().toLowerCase();
+      if (existingNames.has(normalizedName)) {
+        return false;
+      }
+      existingNames.add(normalizedName);
+      return true;
+    });
+
+    const result = await prisma.product.createMany({
+      data: uniqueProducts,
+      skipDuplicates: true,
+    });
+
+    res.json({
+      message: `Imported ${result.count} products.`,
+      imported: result.count,
+      skipped: products.length - result.count,
+    });
   } catch (error) {
     console.error('Error importing products:', error);
     res.status(500).json({ message: 'Server error importing Excel' });
@@ -145,24 +224,43 @@ router.get('/:id', authenticate, async (req, res) => {
 // Create product
 router.post('/', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res) => {
   const { name, description, basePrice, category } = req.body;
+  const normalizedName = typeof name === 'string' ? name.trim() : '';
+  const numericPrice = Number(basePrice);
+  if (!normalizedName || normalizedName.length > 100 ||
+    !Number.isFinite(numericPrice) || numericPrice < 0 || numericPrice > 99999999.99 ||
+    (description !== undefined && description !== null && typeof description !== 'string') ||
+    (category !== undefined && category !== null && typeof category !== 'string') ||
+    (typeof category === 'string' && category.length > 50)) {
+    return res.status(400).json({ message: 'Provide a product name and a valid non-negative base price.' });
+  }
   if (!req.user.companyId && req.user.role !== 'SUPERADMIN') {
     return res.status(403).json({ message: 'User not assigned to a company' });
   }
   
   // If SUPERADMIN, they must pass companyId in body or we fail for now, but usually ADMIN uses this.
-  const targetCompanyId = req.user.role === 'SUPERADMIN' ? (req.body.companyId || req.user.companyId) : req.user.companyId;
+  const targetCompanyId = Number(
+    req.user.role === 'SUPERADMIN' ? (req.body.companyId || req.user.companyId) : req.user.companyId
+  );
 
-  if (!targetCompanyId) {
+  if (!Number.isInteger(targetCompanyId) || targetCompanyId <= 0) {
     return res.status(400).json({ message: 'companyId is required for creation' });
   }
 
   try {
+    const tenant = await prisma.company.findFirst({
+      where: { id: targetCompanyId, isActive: true },
+      select: { id: true },
+    });
+    if (!tenant) {
+      return res.status(400).json({ message: 'The selected company does not exist or is inactive.' });
+    }
+
     const product = await prisma.product.create({
       data: {
         companyId: targetCompanyId,
-        name,
+        name: normalizedName,
         description,
-        basePrice: parseFloat(basePrice),
+        basePrice: numericPrice,
         category,
       },
     });
@@ -175,8 +273,18 @@ router.post('/', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res
 
 // Update product
 router.put('/:id', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = Number(req.params.id);
   const { name, description, basePrice, category } = req.body;
+  const normalizedName = typeof name === 'string' ? name.trim() : '';
+  const numericPrice = Number(basePrice);
+  if (!Number.isInteger(id) || id <= 0 ||
+    !normalizedName || normalizedName.length > 100 ||
+    !Number.isFinite(numericPrice) || numericPrice < 0 || numericPrice > 99999999.99 ||
+    (description !== undefined && description !== null && typeof description !== 'string') ||
+    (category !== undefined && category !== null && typeof category !== 'string') ||
+    (typeof category === 'string' && category.length > 50)) {
+    return res.status(400).json({ message: 'Provide a valid product ID, name, and non-negative base price.' });
+  }
   try {
     const whereClause = req.user.role === 'SUPERADMIN' ? { id } : { id, companyId: req.user.companyId };
     
@@ -187,9 +295,9 @@ router.put('/:id', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, r
     const product = await prisma.product.update({
       where: { id },
       data: {
-        name,
+        name: normalizedName,
         description,
-        basePrice: parseFloat(basePrice),
+        basePrice: numericPrice,
         category,
       },
     });

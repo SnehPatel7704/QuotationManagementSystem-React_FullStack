@@ -1,17 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../../components/layout/Layout';
+import { useAuth } from '../../contexts/AuthContext';
+import { companyService } from '../../services/companyService';
 import { userService } from '../../services/userService';
 import { FiPlus, FiEdit, FiTrash2, FiUsers } from 'react-icons/fi';
 
 const UserManagement = () => {
+  const { user: currentUser } = useAuth();
+  const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
   const [users, setUsers] = useState([]);
+  const [tenantCompanies, setTenantCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     loadUsers();
-  }, []);
+    if (isSuperAdmin) {
+      companyService.getTenants()
+        .then((response) => setTenantCompanies(response.data))
+        .catch((error) => {
+          console.error('Error loading tenant companies:', error);
+          alert(error.response?.data?.message || 'Failed to load tenant companies.');
+        });
+    }
+  }, [isSuperAdmin]);
 
   const loadUsers = async () => {
     try {
@@ -77,6 +90,7 @@ const UserManagement = () => {
                   <th className="table-header-cell">Username</th>
                   <th className="table-header-cell">Email</th>
                   <th className="table-header-cell">Role</th>
+                  {isSuperAdmin && <th className="table-header-cell">Company</th>}
                   <th className="table-header-cell">Status</th>
                   <th className="table-header-cell">Actions</th>
                 </tr>
@@ -84,7 +98,7 @@ const UserManagement = () => {
               <tbody className="table-body">
                 {users.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="table-cell text-center py-12">
+                    <td colSpan={isSuperAdmin ? 6 : 5} className="table-cell text-center py-12">
                       <FiUsers size={48} className="mx-auto mb-4 opacity-50 text-gray-400" />
                       <p className="text-gray-500 dark:text-gray-400">No users found</p>
                     </td>
@@ -99,6 +113,11 @@ const UserManagement = () => {
                           {user.role}
                         </span>
                       </td>
+                      {isSuperAdmin && (
+                        <td className="table-cell">
+                          {tenantCompanies.find((company) => company.id === user.companyId)?.name || 'System'}
+                        </td>
+                      )}
                       <td className="table-cell">
                         <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
                           user.enabled 
@@ -109,22 +128,24 @@ const UserManagement = () => {
                         </span>
                       </td>
                       <td className="table-cell">
-                        <div className="flex space-x-2">
-                          <button 
-                            onClick={() => handleEdit(user)}
-                            className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900 rounded"
-                            title="Edit"
-                          >
-                            <FiEdit size={18} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(user.id)}
-                            className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900 rounded"
-                            title="Delete"
-                          >
-                            <FiTrash2 size={18} />
-                          </button>
-                        </div>
+                        {user.role !== 'SUPERADMIN' && user.id !== currentUser?.id && (
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => handleEdit(user)}
+                              className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900 rounded"
+                              title="Edit"
+                            >
+                              <FiEdit size={18} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(user.id)}
+                              className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900 rounded"
+                              title="Delete"
+                            >
+                              <FiTrash2 size={18} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -148,7 +169,9 @@ const UserManagement = () => {
                   username: formData.get('username'),
                   email: formData.get('email'),
                   password: formData.get('password'),
-                  role: formData.get('role')
+                  role: formData.get('role'),
+                  ...(editingUser ? { enabled: formData.get('enabled') === 'true' } : {}),
+                  ...(isSuperAdmin ? { companyId: Number(formData.get('companyId')) } : {}),
                 };
                 try {
                   if (editingUser) {
@@ -207,6 +230,36 @@ const UserManagement = () => {
                       <option value="ADMIN">Admin</option>
                     </select>
                   </div>
+                  {isSuperAdmin && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Company *</label>
+                      <select
+                        name="companyId"
+                        defaultValue={editingUser?.companyId || ''}
+                        required
+                        className="input w-full"
+                      >
+                        <option value="">Select a company</option>
+                        {tenantCompanies.map((company) => (
+                          <option key={company.id} value={company.id}>{company.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {editingUser && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Account status *</label>
+                      <select
+                        name="enabled"
+                        defaultValue={editingUser.enabled ? 'true' : 'false'}
+                        required
+                        className="input w-full"
+                      >
+                        <option value="true">Active</option>
+                        <option value="false">Disabled</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
                 <div className="flex justify-end space-x-3 mt-6">
                   <button

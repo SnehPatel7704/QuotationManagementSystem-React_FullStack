@@ -2,12 +2,16 @@ import api from './api';
 import { parseApiError } from '../utils/errorHandler';
 
 export const companyService = {
-  getAll: async () => {
+  getAll: async (companyId) => {
     try {
-      return await api.get('/companies');
+      return await api.get('/companies', { params: companyId ? { companyId } : {} });
     } catch (error) {
       throw error;
     }
+  },
+
+  getTenants: async () => {
+    return await api.get('/companies/tenants');
   },
   
   getCompanies: async () => {
@@ -53,9 +57,12 @@ export const companyService = {
     }
   },
   
-  exportExcel: async () => {
+  exportExcel: async (companyId) => {
     try {
-      const response = await api.get('/companies/export-excel', { responseType: 'blob' });
+      const response = await api.get('/companies/export-excel', {
+        responseType: 'blob',
+        params: companyId ? { companyId } : {},
+      });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -68,10 +75,13 @@ export const companyService = {
     }
   },
 
-  importExcel: async (file) => {
+  importExcel: async (file, companyId) => {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      if (companyId) {
+        formData.append('companyId', String(companyId));
+      }
       return await api.post('/companies/import-excel', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',

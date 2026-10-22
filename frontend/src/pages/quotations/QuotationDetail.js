@@ -14,7 +14,8 @@ import {
   FiUser,
   FiCalendar,
   FiUpload,
-  FiActivity
+  FiActivity,
+  FiMail
 } from 'react-icons/fi';
 
 const QuotationDetail = () => {
@@ -27,6 +28,8 @@ const QuotationDetail = () => {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState({});
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [sendEmailOpen, setSendEmailOpen] = useState(false);
+  const [clientEmail, setClientEmail] = useState('');
 
   useEffect(() => {
     loadQuotation();
@@ -37,6 +40,7 @@ const QuotationDetail = () => {
     try {
       const response = await quotationService.getById(id);
       setQuotation(response.data);
+      setClientEmail(response.data.clientCompany?.email || response.data.company?.email || '');
 
       const comparisonResponse = await quotationService.compare(id);
       setComparison(comparisonResponse.data);
@@ -52,9 +56,11 @@ const QuotationDetail = () => {
   const handleApprove = async () => {
     setActionLoading(prev => ({ ...prev, approve: true }));
     try {
-      await quotationService.approve(id);
+      const response = await quotationService.approve(id);
       await loadQuotation();
-      alert('Quotation approved successfully!');
+      alert(response.data.notificationSent === false
+        ? `Quotation approved. ${response.data.notificationMessage || 'The creator notification could not be sent.'}`
+        : 'Quotation approved successfully!');
     } catch (error) {
       console.error('Error approving quotation:', error);
       console.error('Error response:', error.response);
@@ -68,9 +74,11 @@ const QuotationDetail = () => {
   const handleRejectSubmit = async (rejectionReason) => {
     setActionLoading(prev => ({ ...prev, reject: true }));
     try {
-      await quotationService.reject(id, rejectionReason);
+      const response = await quotationService.reject(id, rejectionReason);
       setRejectModalOpen(false);
-      alert('Quotation rejected successfully! A new revision has been created.');
+      alert(response.data.notificationSent === false
+        ? `Quotation rejected and a new revision has been created. ${response.data.notificationMessage || 'The creator notification could not be sent.'}`
+        : 'Quotation rejected successfully! A new revision has been created.');
       navigate('/quotations');
     } catch (error) {
       console.error('Error rejecting quotation:', error);
@@ -85,9 +93,11 @@ const QuotationDetail = () => {
   const handleSubmitForApproval = async () => {
     setActionLoading(prev => ({ ...prev, submit: true }));
     try {
-      await quotationService.submit(id);
+      const response = await quotationService.submit(id);
       await loadQuotation();
-      alert('Quotation submitted for approval successfully!');
+      alert(response.data.notificationsSent === false
+        ? `Quotation submitted. ${response.data.notificationMessage || 'Admin notifications could not be sent.'}`
+        : 'Quotation submitted for approval successfully!');
     } catch (error) {
       console.error('Error submitting quotation:', error);
       console.error('Error response:', error.response);
@@ -95,6 +105,22 @@ const QuotationDetail = () => {
       alert(errorMessage);
     } finally {
       setActionLoading(prev => ({ ...prev, submit: false }));
+    }
+  };
+
+  const handleSendToClient = async (event) => {
+    event.preventDefault();
+    setActionLoading(prev => ({ ...prev, send: true }));
+    try {
+      await quotationService.sendToClient(id, clientEmail.trim());
+      setSendEmailOpen(false);
+      await loadQuotation();
+      alert('Quotation emailed to the client successfully.');
+    } catch (error) {
+      console.error('Error sending quotation to client:', error);
+      alert(error.response?.data?.message || error.message || 'Failed to email the quotation.');
+    } finally {
+      setActionLoading(prev => ({ ...prev, send: false }));
     }
   };
 
@@ -179,6 +205,8 @@ const QuotationDetail = () => {
     quotation?.status === 'PENDING_APPROVAL';
   const canSubmit = (user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') &&
     quotation?.status === 'DRAFT';
+  const canSendToClient = (user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') &&
+    ['APPROVED', 'SENT'].includes(quotation?.status);
   const canExportPDF = quotation?.status === 'APPROVED' || quotation?.status === 'SENT';
 
   if (loading) {
@@ -270,6 +298,15 @@ const QuotationDetail = () => {
                       <span>Approve</span>
                     </>
                   )}
+                  {canSendToClient && (
+                    <button
+                      onClick={() => setSendEmailOpen(true)}
+                      className="btn bg-indigo-600 hover:bg-indigo-700 text-white flex items-center space-x-2"
+                    >
+                      <FiMail size={18} />
+                      <span>{quotation.status === 'SENT' ? 'Resend to Client' : 'Email to Client'}</span>
+                    </button>
+                  )}
                 </button>
                 <button
                   onClick={() => setRejectModalOpen(true)}
@@ -330,6 +367,52 @@ const QuotationDetail = () => {
             )}
           </div>
         </div>
+
+        {sendEmailOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <form
+              onSubmit={handleSendToClient}
+              className="w-full max-w-lg space-y-4 rounded-lg bg-white p-6 shadow-xl dark:bg-gray-800"
+            >
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Email quotation</h2>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  The approved quotation PDF will be attached to the email.
+                </p>
+              </div>
+              <div>
+                <label htmlFor="client-email" className="label">Client email</label>
+                <input
+                  id="client-email"
+                  type="email"
+                  required
+                  value={clientEmail}
+                  onChange={(event) => setClientEmail(event.target.value)}
+                  className="input w-full"
+                  autoComplete="email"
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSendEmailOpen(false)}
+                  disabled={actionLoading.send}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading.send || !clientEmail.trim()}
+                  className="btn btn-primary flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <FiMail size={16} />
+                  <span>{actionLoading.send ? 'Sending...' : 'Send quotation'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
 
         {/* Rejection Reason Alert */}
         {quotation.status === 'REJECTED' && quotation.rejectionReason && (

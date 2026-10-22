@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/layout/Layout';
 import FormInput from '../../components/common/FormInput';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -19,11 +20,14 @@ import { FiSave, FiX, FiPlus, FiTrash2, FiSearch } from 'react-icons/fi';
 const QuotationEdit = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, companyProfile } = useAuth();
   
   // State for form data
   const [formData, setFormData] = useState({
     companyId: '',
     followUpDate: '',
+    taxRate: 0,
+    isTaxInclusive: false,
     items: [{ productId: '', quantity: 1, unitPrice: 0 }],
   });
 
@@ -36,6 +40,10 @@ const QuotationEdit = () => {
   const [products, setProducts] = useState([]);
   const [companySearch, setCompanySearch] = useState('');
   const [productSearches, setProductSearches] = useState(['']);
+  const selectedClientCompany = companies.find((company) => company.id === Number(formData.companyId));
+  const currencySymbol = user?.role === 'SUPERADMIN'
+    ? selectedClientCompany?.tenantCompany?.currencySymbol || 'USD'
+    : companyProfile?.currencySymbol || 'OMR';
 
   // State for UI
   const [loading, setLoading] = useState(false);
@@ -73,8 +81,10 @@ const QuotationEdit = () => {
         setQuotationStatus(quotationData.status);
         setQuotationNumber(quotationData.quotationNumber || id);
         setFormData({
-          companyId: quotationData.companyId || '',
-          followUpDate: quotationData.followUpDate || '',
+          companyId: quotationData.clientCompanyId || '',
+          followUpDate: quotationData.followUpDate ? quotationData.followUpDate.slice(0, 10) : '',
+          taxRate: quotationData.taxRate ?? 0,
+          isTaxInclusive: Boolean(quotationData.isTaxInclusive),
           items: quotationData.items && quotationData.items.length > 0
             ? quotationData.items.map(item => ({
                 productId: item.productId || '',
@@ -124,11 +134,17 @@ const QuotationEdit = () => {
   };
 
   // Calculate quotation total
-  const calculateQuotationTotal = () => {
-    return formData.items.reduce((total, item) => {
-      return total + calculateItemTotal(item.quantity, item.unitPrice);
-    }, 0);
-  };
+  const calculateQuotationSubtotal = () => formData.items.reduce((total, item) => (
+    total + calculateItemTotal(item.quantity, item.unitPrice)
+  ), 0);
+
+  const calculateQuotationTax = () => (
+    formData.isTaxInclusive
+      ? 0
+      : calculateQuotationSubtotal() * (Number(formData.taxRate) || 0) / 100
+  );
+
+  const calculateQuotationTotal = () => calculateQuotationSubtotal() + calculateQuotationTax();
 
   // Filter companies based on search
   const filteredCompanies = companies.filter((company) =>
@@ -139,7 +155,8 @@ const QuotationEdit = () => {
   const getFilteredProducts = (index) => {
     const search = productSearches[index] || '';
     return products.filter((product) =>
-      product.name?.toLowerCase().includes(search.toLowerCase())
+      product.name?.toLowerCase().includes(search.toLowerCase()) &&
+      (user?.role !== 'SUPERADMIN' || !selectedClientCompany || product.companyId === selectedClientCompany.companyId)
     );
   };
 
@@ -272,6 +289,10 @@ const QuotationEdit = () => {
       }
     });
 
+    if (!Number.isFinite(Number(formData.taxRate)) || Number(formData.taxRate) < 0) {
+      newErrors.taxRate = 'Tax rate must be a non-negative number.';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -295,15 +316,12 @@ const QuotationEdit = () => {
     try {
       setLoading(true);
 
-      // Get user ID from localStorage (assuming it's stored there)
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      const userId = user.id || 1;
-
       const quotationData = {
         quotation: {
           companyId: Number(formData.companyId),
           followUpDate: formData.followUpDate || null,
-          createdBy: userId,
+          taxRate: formData.taxRate,
+          isTaxInclusive: formData.isTaxInclusive,
         },
         items: formData.items.map((item) => ({
           productId: Number(item.productId),
@@ -341,14 +359,12 @@ const QuotationEdit = () => {
       setLoading(true);
 
       // First save the changes
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      const userId = user.id || 1;
-
       const quotationData = {
         quotation: {
           companyId: Number(formData.companyId),
           followUpDate: formData.followUpDate || null,
-          createdBy: userId,
+          taxRate: formData.taxRate,
+          isTaxInclusive: formData.isTaxInclusive,
         },
         items: formData.items.map((item) => ({
           productId: Number(item.productId),
@@ -360,7 +376,10 @@ const QuotationEdit = () => {
       await quotationService.update(id, quotationData);
       
       // Then submit for approval
-      await quotationService.submit(id);
+      const submitResponse = await quotationService.submit(id);
+      if (submitResponse.data.notificationsSent === false) {
+        window.alert(submitResponse.data.notificationMessage || 'Quotation submitted, but email notifications could not be delivered.');
+      }
       
       setIsDirty(false);
       navigate('/quotations');
@@ -477,7 +496,7 @@ const QuotationEdit = () => {
               <option value="">Select a company</option>
               {filteredCompanies.map((company) => (
                 <option key={company.id} value={company.id}>
-                  {company.name}
+                  {company.name}{user?.role === 'SUPERADMIN' && company.tenantCompany?.name ? ` (${company.tenantCompany.name})` : ''}
                 </option>
               ))}
             </select>
@@ -496,6 +515,35 @@ const QuotationEdit = () => {
             value={formData.followUpDate}
             onChange={handleFollowUpDateChange}
           />
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FormInput
+              label="Tax Rate (%)"
+              name="taxRate"
+              type="number"
+              min="0"
+              max="999.99"
+              step="0.01"
+              value={formData.taxRate}
+              error={errors.taxRate}
+              onChange={(event) => {
+                setFormData({ ...formData, taxRate: event.target.value });
+                setIsDirty(true);
+              }}
+            />
+            <label className="flex items-center gap-3 pt-7 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={formData.isTaxInclusive}
+                onChange={(event) => {
+                  setFormData({ ...formData, isTaxInclusive: event.target.checked });
+                  setIsDirty(true);
+                }}
+                className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              Prices include tax
+            </label>
+          </div>
 
           {/* Items Section */}
           <div className="space-y-4">
@@ -638,13 +686,16 @@ const QuotationEdit = () => {
           {/* Quotation Total */}
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
             <div className="flex justify-end">
-              <div className="text-right">
-                <span className="text-lg text-gray-600 dark:text-gray-400">
-                  Quotation Total:
-                </span>
-                <span className="ml-4 text-2xl font-bold text-primary-600 dark:text-primary-400">
-                  OMR {quotationTotal.toFixed(2)}
-                </span>
+              <div className="space-y-1 text-right">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Subtotal: {currencySymbol} {calculateQuotationSubtotal().toFixed(2)}
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {formData.isTaxInclusive ? 'Tax included' : `Tax (${Number(formData.taxRate) || 0}%): ${currencySymbol} ${calculateQuotationTax().toFixed(2)}`}
+                </p>
+                <p className="text-lg font-bold text-primary-600 dark:text-primary-400">
+                  Quotation Total: {currencySymbol} {quotationTotal.toFixed(2)}
+                </p>
               </div>
             </div>
           </div>
