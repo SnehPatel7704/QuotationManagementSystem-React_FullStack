@@ -388,7 +388,10 @@ const UpcomingFollowups = () => {
                         </p>
                         <p className="text-gray-700 dark:text-gray-300 text-sm sm:text-base">
                           <span className="font-semibold">Amount:</span>{' '}
-                          OMR {Number(quotation.totalAmount || 0).toFixed(2)}
+                          {quotation.currencySymbol || quotation.currencyCode
+                            ? `${quotation.currencySymbol || quotation.currencyCode} `
+                            : ''}
+                          {Number(quotation.totalAmount || 0).toFixed(2)}
                         </p>
                       </div>
                     </div>

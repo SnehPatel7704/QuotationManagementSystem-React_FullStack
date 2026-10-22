@@ -340,10 +340,21 @@ router.get('/upcoming-followups', authenticate, authorize('ADMIN', 'SUPERADMIN')
       where: whereClause,
       include: {
         clientCompany: true,
+        company: {
+          select: {
+            currencyCode: true,
+            currencySymbol: true,
+          },
+        },
       },
       orderBy: { followUpDate: 'asc' },
     });
-    const mapped = followups.map(q => ({ ...q, company: q.clientCompany }));
+    const mapped = followups.map(q => ({
+      ...q,
+      company: q.clientCompany,
+      currencyCode: q.company.currencyCode,
+      currencySymbol: q.company.currencySymbol,
+    }));
     res.json(mapped);
   } catch (error) {
     console.error('Error fetching upcoming followups:', error);
