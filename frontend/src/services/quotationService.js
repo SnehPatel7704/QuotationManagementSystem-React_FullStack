@@ -1,14 +1,14 @@
 import api from './api';
 
 export const quotationService = {
-  getAll: async () => {
+  getAll: async (params = {}) => {
     try {
-      return await api.get('/quotations');
+      return await api.get('/quotations', { params });
     } catch (error) {
       throw error;
     }
   },
-  
+
   getById: async (id) => {
     try {
       return await api.get(`/quotations/${id}`);
@@ -51,9 +51,23 @@ export const quotationService = {
   
   reject: async (id, rejectionReason) => {
     try {
-      return await api.post(`/quotations/${id}/reject`, null, {
-        params: { rejectionReason }
-      });
+      return await api.post(`/quotations/${id}/reject`, { rejectionReason });
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  clone: async (id) => {
+    try {
+      return await api.post(`/quotations/${id}/clone`);
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  compare: async (id) => {
+    try {
+      return await api.get(`/quotations/${id}/compare`);
     } catch (error) {
       throw error;
     }
@@ -69,9 +83,7 @@ export const quotationService = {
   
   sendToClient: async (id, clientEmail) => {
     try {
-      return await api.post(`/quotations/${id}/send`, null, {
-        params: { clientEmail }
-      });
+      return await api.post(`/quotations/${id}/send`, { clientEmail });
     } catch (error) {
       throw error;
     }

@@ -108,6 +108,13 @@ The following credentials are seeded by default for testing purposes:
   - Interactive charts (Revenue trends and Status distribution) using Recharts.
 - **Theme Support**
   - Light/Dark mode toggle with persistent preference.
+- **Search, Filters & Pagination**
+  - Filter quotations by status and search by quote number or client.
+  - Paginated lists for production-scale data handling.
+- **Professional Workflow Enhancements**
+  - Clone quotes for quick revisions.
+  - Compare revision history and track value changes.
+  - Stronger environment validation and startup checks.
 - **Responsive Modern UI**
   - Built with Tailwind CSS and Radix UI primitives.
 

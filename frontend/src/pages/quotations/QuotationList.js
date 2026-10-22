@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/layout/Layout';
@@ -14,21 +14,61 @@ const QuotationList = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedQuotationId, setSelectedQuotationId] = useState(null);
   const [selectedQuotationNumber, setSelectedQuotationNumber] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [pagination, setPagination] = useState({ page: 1, limit: 10, totalItems: 0, totalPages: 1 });
   const { user, companyProfile } = useAuth();
   const currencySymbol = companyProfile?.currencySymbol || 'OMR';
 
-  useEffect(() => {
-    loadQuotations();
-  }, []);
-
-  const loadQuotations = async () => {
+  const loadQuotations = useCallback(async (nextPage = 1) => {
     try {
-      const response = await quotationService.getAll();
-      setQuotations(response.data);
+      const params = {
+        page: nextPage,
+        limit: pagination.limit,
+        search: searchTerm.trim(),
+        status: statusFilter !== 'ALL' ? statusFilter : undefined,
+      };
+      const response = await quotationService.getAll(params);
+      const payload = response.data && Array.isArray(response.data) ? response.data : response.data?.data || [];
+      const meta = response.data?.pagination || { page: nextPage, limit: pagination.limit, totalItems: payload.length, totalPages: 1 };
+
+      setQuotations(payload);
+      setPagination((prev) => ({ ...prev, ...meta, page: meta.page || nextPage }));
     } catch (error) {
       console.error('Error loading quotations:', error);
     } finally {
       setLoading(false);
+    }
+  }, [pagination.limit, searchTerm, statusFilter]);
+
+  useEffect(() => {
+    loadQuotations();
+  }, [loadQuotations]);
+
+  const handleSearch = async () => {
+    setLoading(true);
+    await loadQuotations(1);
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  };
+
+  const handleFilterChange = async (nextStatus) => {
+    setStatusFilter(nextStatus);
+    setLoading(true);
+    await loadQuotations(1);
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  };
+
+  const handleClone = async (id) => {
+    setActionLoading(prev => ({ ...prev, [`clone-${id}`]: true }));
+    try {
+      await quotationService.clone(id);
+      await loadQuotations(1);
+      alert('Quotation cloned successfully!');
+    } catch (error) {
+      console.error('Error cloning quotation:', error);
+      alert(error.response?.data?.message || 'Failed to clone quotation.');
+    } finally {
+      setActionLoading(prev => ({ ...prev, [`clone-${id}`]: false }));
     }
   };
 
@@ -151,6 +191,40 @@ const QuotationList = () => {
           )}
         </div>
 
+        <div className="card p-4 sm:p-5">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Search quotations</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search by quotation number or client"
+                  className="input flex-1"
+                />
+                <button onClick={handleSearch} className="btn btn-primary">Search</button>
+              </div>
+            </div>
+
+            <div className="lg:w-56">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Status</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => handleFilterChange(e.target.value)}
+                className="input w-full"
+              >
+                <option value="ALL">All statuses</option>
+                <option value="DRAFT">Draft</option>
+                <option value="PENDING_APPROVAL">Pending approval</option>
+                <option value="APPROVED">Approved</option>
+                <option value="SENT">Sent</option>
+                <option value="REJECTED">Rejected</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         {/* Quotations Table */}
         <div className="card overflow-hidden p-0">
           {/* Desktop Table View */}
@@ -271,6 +345,21 @@ const QuotationList = () => {
                               >
                                 <FiEdit size={18} />
                               </Link>
+                            )}
+
+                            {canEdit && (
+                              <button
+                                onClick={() => handleClone(quotation.id)}
+                                disabled={actionLoading[`clone-${quotation.id}`]}
+                                className="p-2 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Clone quotation"
+                              >
+                                {actionLoading[`clone-${quotation.id}`] ? (
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600"></div>
+                                ) : (
+                                  <FiCheckCircle size={18} />
+                                )}
+                              </button>
                             )}
                             
                             {/* Delete button - only for SUPERADMIN */}
@@ -436,6 +525,23 @@ const QuotationList = () => {
                               <span>Edit</span>
                             </Link>
                           )}
+
+                          {canEdit && (
+                            <button
+                              onClick={() => handleClone(quotation.id)}
+                              disabled={actionLoading[`clone-${quotation.id}`]}
+                              className="flex-1 min-w-[120px] px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 text-sm"
+                            >
+                              {actionLoading[`clone-${quotation.id}`] ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                              ) : (
+                                <>
+                                  <FiCheckCircle size={16} />
+                                  <span>Clone</span>
+                                </>
+                              )}
+                            </button>
+                          )}
                           
                           {/* Delete button - only for SUPERADMIN */}
                           {user?.role === 'SUPERADMIN' && (
@@ -464,6 +570,30 @@ const QuotationList = () => {
               </div>
             )}
           </div>
+
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Showing {(pagination.page - 1) * pagination.limit + 1}–{Math.min(pagination.page * pagination.limit, pagination.totalItems)} of {pagination.totalItems}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => loadQuotations(Math.max(1, pagination.page - 1))}
+                  disabled={pagination.page <= 1}
+                  className="btn btn-secondary disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => loadQuotations(Math.min(pagination.totalPages, pagination.page + 1))}
+                  disabled={pagination.page >= pagination.totalPages}
+                  className="btn btn-secondary disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

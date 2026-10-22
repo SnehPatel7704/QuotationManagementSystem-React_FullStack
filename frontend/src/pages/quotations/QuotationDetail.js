@@ -23,13 +23,13 @@ const QuotationDetail = () => {
   const { user, companyProfile } = useAuth();
   const currencySymbol = companyProfile?.currencySymbol || 'OMR';
   const [quotation, setQuotation] = useState(null);
+  const [comparison, setComparison] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState({});
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
 
   useEffect(() => {
     loadQuotation();
-    console.log(quotation);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -37,6 +37,9 @@ const QuotationDetail = () => {
     try {
       const response = await quotationService.getById(id);
       setQuotation(response.data);
+
+      const comparisonResponse = await quotationService.compare(id);
+      setComparison(comparisonResponse.data);
     } catch (error) {
       console.error('Error loading quotation:', error);
       alert('Failed to load quotation details');
@@ -92,6 +95,20 @@ const QuotationDetail = () => {
       alert(errorMessage);
     } finally {
       setActionLoading(prev => ({ ...prev, submit: false }));
+    }
+  };
+
+  const handleClone = async () => {
+    setActionLoading(prev => ({ ...prev, clone: true }));
+    try {
+      const response = await quotationService.clone(id);
+      navigate(`/quotations/${response.data.id}`);
+      alert('Quotation cloned successfully.');
+    } catch (error) {
+      console.error('Error cloning quotation:', error);
+      alert(error.response?.data?.message || 'Failed to clone quotation.');
+    } finally {
+      setActionLoading(prev => ({ ...prev, clone: false }));
     }
   };
 
@@ -215,7 +232,7 @@ const QuotationDetail = () => {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex space-x-3">
+          <div className="flex flex-wrap gap-3">
             {canSubmit && (
               <button
                 onClick={handleSubmitForApproval}
@@ -273,6 +290,25 @@ const QuotationDetail = () => {
                 </button>
               </>
             )}
+            {(user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') && (
+              <button
+                onClick={handleClone}
+                disabled={actionLoading.clone}
+                className="btn bg-purple-600 hover:bg-purple-700 text-white flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {actionLoading.clone ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span>Cloning...</span>
+                  </>
+                ) : (
+                  <>
+                    <FiActivity size={18} />
+                    <span>Clone</span>
+                  </>
+                )}
+              </button>
+            )}
             {canExportPDF && (
               <button
                 onClick={handleExportPDF}
@@ -307,6 +343,23 @@ const QuotationDetail = () => {
                 <p className="text-red-800 dark:text-red-400">
                   {quotation.rejectionReason}
                 </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {comparison && (
+          <div className="card bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-700">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-semibold text-violet-900 dark:text-violet-300 mb-1">Version Comparison</h3>
+                <p className="text-sm text-violet-700 dark:text-violet-300">
+                  Comparing {comparison.previousNumber} vs {comparison.currentNumber}
+                </p>
+              </div>
+              <div className="text-right text-sm text-violet-700 dark:text-violet-300">
+                <div>Amount delta: {comparison.totalAmountDelta >= 0 ? '+' : ''}{currencySymbol} {Math.abs(comparison.totalAmountDelta).toFixed(2)}</div>
+                <div>Item delta: {comparison.itemCountDelta >= 0 ? '+' : ''}{comparison.itemCountDelta}</div>
               </div>
             </div>
           </div>

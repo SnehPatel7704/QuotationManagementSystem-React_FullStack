@@ -13,12 +13,77 @@ const { logAudit } = require('../services/auditService');
 const router = express.Router();
 const prisma = new PrismaClient();
 
+const normalizeBoolean = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    return ['true', '1', 'yes', 'y'].includes(value.toLowerCase());
+  }
+  return Boolean(value);
+};
+
+const getPaginationMeta = (req, totalItems) => {
+  const page = Math.max(1, parseInt(req.query.page || '1', 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || '25', 10) || 25));
+  const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+
+  return {
+    page,
+    limit,
+    totalItems,
+    totalPages,
+  };
+};
+
+const buildQuotationQuery = (req) => {
+  const search = (req.query.search || '').trim();
+  const status = req.query.status;
+  const where = req.user.role === 'SUPERADMIN' ? {} : { companyId: req.user.companyId };
+
+  if (status) {
+    where.status = status;
+  }
+
+  if (search) {
+    const searchTerm = `%${search}%`;
+    where.OR = [
+      { quotationNumber: { contains: search } },
+      { clientCompany: { name: { contains: search } } },
+      { company: { name: { contains: search } } },
+    ];
+  }
+
+  return where;
+};
+
 // Get dashboard analytics
 router.get('/analytics', authenticate, async (req, res) => {
   try {
     const whereClause = req.user.role === 'SUPERADMIN' ? {} : { companyId: req.user.companyId };
     const allQuotations = await prisma.quotation.findMany({ where: whereClause });
-    
+
+    const recentActivityWhere = req.user.role === 'SUPERADMIN'
+      ? {}
+      : { quotation: { companyId: req.user.companyId } };
+
+    const recentActivity = await prisma.quotationAuditLog.findMany({
+      where: recentActivityWhere,
+      include: {
+        quotation: {
+          select: {
+            quotationNumber: true,
+            status: true,
+          },
+        },
+        user: {
+          select: {
+            username: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 8,
+    });
+
     let totalRevenue = 0;
     let approvedCount = 0;
     let pendingCount = 0;
@@ -28,7 +93,7 @@ router.get('/analytics', authenticate, async (req, res) => {
     allQuotations.forEach(q => {
       // 1. Distribution
       statusDistribution[q.status] = (statusDistribution[q.status] || 0) + 1;
-      
+
       // 2. Metrics
       if (q.status === 'APPROVED' || q.status === 'SENT') {
         approvedCount++;
@@ -71,7 +136,17 @@ router.get('/analytics', authenticate, async (req, res) => {
         totalCount
       },
       chartData,
-      pieData
+      pieData,
+      recentActivity: recentActivity.map(item => ({
+        id: item.id,
+        quotationNumber: item.quotation?.quotationNumber || 'N/A',
+        action: item.action,
+        actor: item.user?.username || 'System',
+        oldStatus: item.oldStatus,
+        newStatus: item.newStatus,
+        notes: item.notes,
+        createdAt: item.createdAt,
+      })),
     });
 
   } catch (error) {
@@ -80,10 +155,18 @@ router.get('/analytics', authenticate, async (req, res) => {
   }
 });
 
-// Get all quotations
+// Get all quotations with support for search, filter, pagination and sorting
 router.get('/', authenticate, async (req, res) => {
   try {
-    const whereClause = req.user.role === 'SUPERADMIN' ? {} : { companyId: req.user.companyId };
+    const whereClause = buildQuotationQuery(req);
+    const page = Math.max(1, parseInt(req.query.page || '1', 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || '25', 10) || 25));
+    const sortBy = ['createdAt', 'updatedAt', 'totalAmount', 'quotationNumber', 'followUpDate'].includes(req.query.sortBy)
+      ? req.query.sortBy
+      : 'createdAt';
+    const sortOrder = (req.query.sortOrder || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+    const totalItems = await prisma.quotation.count({ where: whereClause });
     const quotations = await prisma.quotation.findMany({
       where: whereClause,
       include: {
@@ -95,13 +178,25 @@ router.get('/', authenticate, async (req, res) => {
           select: { username: true },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { [sortBy]: sortOrder },
+      skip: (page - 1) * limit,
+      take: limit,
     });
+
     const mapped = quotations.map(q => ({ ...q, company: q.clientCompany }));
-    res.json(mapped);
+
+    const hasPaging = req.query.page || req.query.limit || req.query.search || req.query.status;
+    if (!hasPaging) {
+      return res.json(mapped);
+    }
+
+    return res.json({
+      data: mapped,
+      pagination: getPaginationMeta(req, totalItems),
+    });
   } catch (error) {
     console.error('Error fetching quotations:', error);
-    res.status(500).json({ message: 'Server error' });
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -447,7 +542,11 @@ router.post('/:id/approve', authenticate, authorize('ADMIN', 'SUPERADMIN'), asyn
 // Reject quotation (creates a new DRAFT revision)
 router.post('/:id/reject', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res) => {
   const id = parseInt(req.params.id);
-  const { reason } = req.body;
+  const reason = req.body?.reason || req.body?.rejectionReason || req.query.rejectionReason;
+
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ message: 'A rejection reason is required.' });
+  }
 
   try {
     const approver = await prisma.user.findUnique({
@@ -522,36 +621,37 @@ router.post('/:id/reject', authenticate, authorize('ADMIN', 'SUPERADMIN'), async
 // Send quotation to client via email
 router.post('/:id/send', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res) => {
   const id = parseInt(req.params.id);
+  const clientEmail = req.body?.clientEmail || req.query.clientEmail || req.body?.email;
+
   try {
     const quotation = await prisma.quotation.findUnique({
       where: { id },
-      include: { company: true },
+      include: { company: true, clientCompany: true },
     });
 
     if (!quotation) {
       return res.status(404).json({ message: 'Quotation not found' });
     }
 
-    if (!quotation.company.email) {
-      return res.status(400).json({ message: 'Company does not have an email address configured.' });
+    const targetEmail = clientEmail || quotation.clientCompany?.email || quotation.company?.email;
+    if (!targetEmail) {
+      return res.status(400).json({ message: 'No client email is configured for this quotation.' });
     }
 
-    // Send email
-    await sendQuotationToClient(quotation, quotation.company.email);
+    await sendQuotationToClient(quotation, targetEmail);
 
-    // Update status to SENT
     const updated = await prisma.quotation.update({
       where: { id },
       data: { status: 'SENT' },
     });
 
     const user = await prisma.user.findUnique({ where: { username: req.user.username } });
-    await logAudit(id, user.id, 'STATUS_CHANGED', quotation.status, 'SENT', 'Sent to client via email');
+    await logAudit(id, user.id, 'STATUS_CHANGED', quotation.status, 'SENT', `Sent to client via email (${targetEmail})`);
 
-    res.json(updated);
+    return res.json(updated);
   } catch (error) {
     console.error('Error sending quotation:', error);
-    res.status(500).json({ message: 'Server error' });
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -595,6 +695,109 @@ router.get('/:id/revisions', authenticate, async (req, res) => {
   }
 });
 
+// Clone quotation and create a new draft from an existing record
+router.post('/:id/clone', authenticate, async (req, res) => {
+  const id = parseInt(req.params.id);
+
+  try {
+    const whereClause = req.user.role === 'SUPERADMIN' ? { id } : { id, companyId: req.user.companyId };
+    const original = await prisma.quotation.findFirst({
+      where: whereClause,
+      include: {
+        items: true,
+      },
+    });
+
+    if (!original) {
+      return res.status(404).json({ message: 'Quotation not found' });
+    }
+
+    const clonedQuotation = await prisma.quotation.create({
+      data: {
+        quotationNumber: `${original.quotationNumber}-CLONE-${Date.now().toString().slice(-4)}`,
+        companyId: original.companyId,
+        clientCompanyId: original.clientCompanyId,
+        templateId: original.templateId,
+        status: 'DRAFT',
+        subtotalAmount: original.subtotalAmount,
+        discountType: original.discountType,
+        discountValue: original.discountValue,
+        taxRate: original.taxRate,
+        isTaxInclusive: original.isTaxInclusive,
+        totalAmount: original.totalAmount,
+        createdBy: original.createdBy,
+        followUpDate: original.followUpDate,
+        rejectionReason: null,
+        revisionNumber: 1,
+        parentQuotationId: null,
+        items: {
+          create: original.items.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            discountType: item.discountType,
+            discountValue: item.discountValue,
+            totalPrice: item.totalPrice,
+          })),
+        },
+      },
+      include: {
+        clientCompany: true,
+        items: true,
+      },
+    });
+
+    const actor = await prisma.user.findUnique({ where: { username: req.user.username } });
+    await logAudit(clonedQuotation.id, actor.id, 'CLONED', null, 'DRAFT', `Cloned from quotation ${original.quotationNumber}`);
+
+    return res.status(201).json(clonedQuotation);
+  } catch (error) {
+    console.error('Error cloning quotation:', error);
+    return res.status(500).json({ message: 'Server error while cloning quotation' });
+  }
+});
+
+// Compare a quotation with its parent or prior revision to review changes
+router.get('/:id/compare', authenticate, async (req, res) => {
+  const id = parseInt(req.params.id);
+  try {
+    const whereClause = req.user.role === 'SUPERADMIN' ? { id } : { id, companyId: req.user.companyId };
+    const current = await prisma.quotation.findFirst({
+      where: whereClause,
+      include: {
+        items: true,
+      },
+    });
+
+    if (!current) {
+      return res.status(404).json({ message: 'Quotation not found' });
+    }
+
+    const base = current.parentQuotationId ? await prisma.quotation.findUnique({
+      where: { id: current.parentQuotationId },
+      include: { items: true },
+    }) : null;
+
+    const previousVersion = base || current;
+    const compareSummary = {
+      currentId: current.id,
+      currentNumber: current.quotationNumber,
+      previousId: previousVersion.id,
+      previousNumber: previousVersion.quotationNumber,
+      totalAmountDelta: Number(current.totalAmount) - Number(previousVersion.totalAmount),
+      itemCountDelta: current.items.length - previousVersion.items.length,
+      statusChanged: current.status !== previousVersion.status,
+      currentStatus: current.status,
+      previousStatus: previousVersion.status,
+    };
+
+    return res.json(compareSummary);
+  } catch (error) {
+    console.error('Error comparing quotation:', error);
+    return res.status(500).json({ message: 'Server error while comparing quotation' });
+  }
+});
+
 // Delete quotation
 router.delete('/:id', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res) => {
   const id = parseInt(req.params.id);
@@ -602,7 +805,7 @@ router.delete('/:id', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req
     const whereClause = req.user.role === 'SUPERADMIN' ? { id } : { id, companyId: req.user.companyId };
     const existing = await prisma.quotation.findFirst({ where: whereClause });
     if (!existing) return res.status(404).json({ message: 'Quotation not found' });
-    
+
     await prisma.quotation.delete({
       where: { id },
     });

@@ -2,6 +2,15 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
+const requiredEnv = ['DATABASE_URL', 'JWT_SECRET'];
+const missingEnv = requiredEnv.filter((key) => !process.env[key] || process.env[key].trim() === '');
+
+if (missingEnv.length) {
+  console.error(`Missing required environment variables: ${missingEnv.join(', ')}`);
+  console.error('Create backend/.env from .env.example before starting the application.');
+  process.exit(1);
+}
+
 const authRoutes = require('./routes/auth');
 const quotationRoutes = require('./routes/quotations');
 const companyRoutes = require('./routes/companies');
@@ -11,6 +20,8 @@ const companyProfileRoutes = require('./routes/companyProfile');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
+
+app.disable('x-powered-by');
 
 // Middleware
 app.use(cors({

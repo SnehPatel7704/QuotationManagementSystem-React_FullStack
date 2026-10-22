@@ -14,6 +14,23 @@ const Dashboard = () => {
   const [analytics, setAnalytics] = useState(null);
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#AF19FF'];
 
+  const getStatusBadgeClasses = (status) => {
+    switch (status) {
+      case 'APPROVED':
+        return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
+      case 'SENT':
+        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
+      case 'PENDING_APPROVAL':
+        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300';
+      case 'REJECTED':
+        return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+      case 'DRAFT':
+        return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
+      default:
+        return 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200';
+    }
+  };
+
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
@@ -173,16 +190,68 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Recent Activity Placeholder */}
-        {/* <div className="card">
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-4">
-            Recent Activity
-          </h2>
-          <div className="text-center py-8 sm:py-12 text-gray-500 dark:text-gray-400">
-            <FiFileText size={40} className="sm:w-12 sm:h-12 mx-auto mb-4 opacity-50" />
-            <p className="text-sm sm:text-base">No recent activity to display</p>
+        {analytics && (
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
+                Recent Activity
+              </h2>
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                Last 8 updates
+              </span>
+            </div>
+
+            {analytics.recentActivity && analytics.recentActivity.length > 0 ? (
+              <div className="space-y-3">
+                {analytics.recentActivity.map((item) => {
+                  const statusValue = item.newStatus || item.oldStatus || 'UPDATED';
+                  const statusText = statusValue.replace(/_/g, ' ');
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800"
+                    >
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-gray-900 dark:text-white">
+                            {item.quotationNumber}
+                          </span>
+                          <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                            {item.action}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          {item.actor} • {new Date(item.createdAt).toLocaleString('en-GB', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {item.notes && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">{item.notes}</span>
+                        )}
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClasses(statusValue)}`}>
+                          {statusText}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                <FiFileText size={32} className="mx-auto mb-3 text-gray-400 dark:text-gray-500" />
+                <p>No recent activity has been recorded yet.</p>
+              </div>
+            )}
           </div>
-        </div> */}
+        )}
 
         {/* Upcoming Follow-ups Widget - Only for ADMIN and SUPERADMIN */}
         {(user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') && (
