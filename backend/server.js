@@ -20,7 +20,8 @@ if (process.env.NODE_ENV === 'production' &&
   process.exit(1);
 }
 
-const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:3001')
+const allowedOrigins = (process.env.CORS_ORIGINS ||
+  'http://localhost:3000,http://localhost:3001,http://localhost:8080')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);

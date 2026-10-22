@@ -9,6 +9,7 @@
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:seed": "prisma db seed",
+    "prisma:seed-demo": "node prisma/seed-demo-data.js",
     "prisma:bootstrap-admin": "node prisma/bootstrap-admin.js",
     "prisma:studio": "prisma studio"
   },

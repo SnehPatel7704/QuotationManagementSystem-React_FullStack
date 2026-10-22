@@ -5,10 +5,14 @@ import FormInput from '../../components/common/FormInput';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ErrorMessage from '../../components/common/ErrorMessage';
 import { companyProfileService } from '../../services/companyProfileService';
+import { companyService } from '../../services/companyService';
 import { FiSave, FiSettings, FiFileText } from 'react-icons/fi';
 
 const CompanyProfile = () => {
-  const { refreshCompanyProfile } = useAuth();
+  const { user, refreshCompanyProfile } = useAuth();
+  const isSuperAdmin = user?.role === 'SUPERADMIN';
+  const [tenantCompanies, setTenantCompanies] = useState([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
   
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -36,13 +40,41 @@ const CompanyProfile = () => {
   });
 
   useEffect(() => {
-    loadProfile();
-  }, []);
+    if (!isSuperAdmin) {
+      loadProfile();
+      return;
+    }
 
-  const loadProfile = async () => {
+    const loadTenants = async () => {
+      try {
+        const response = await companyService.getTenants();
+        setTenantCompanies(response.data);
+        if (response.data.length > 0) {
+          setSelectedCompanyId(String(response.data[0].id));
+        } else {
+          setError('No active tenant companies are available to configure.');
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('Error loading tenant companies:', err);
+        setError('Failed to load tenant companies.');
+        setLoading(false);
+      }
+    };
+    loadTenants();
+  }, [isSuperAdmin]);
+
+  useEffect(() => {
+    if (isSuperAdmin && selectedCompanyId) {
+      loadProfile(Number(selectedCompanyId));
+    }
+  }, [isSuperAdmin, selectedCompanyId]);
+
+  const loadProfile = async (companyId) => {
     try {
       setLoading(true);
-      const res = await companyProfileService.getProfile();
+      setError('');
+      const res = await companyProfileService.getProfile(companyId);
       const data = res.data;
       
       setProfileData({
@@ -95,8 +127,11 @@ const CompanyProfile = () => {
     setSuccess('');
     
     try {
-      await companyProfileService.updateProfile(profileData);
-      await refreshCompanyProfile(); // Update global auth context
+      await companyProfileService.updateProfile(
+        profileData,
+        isSuperAdmin ? Number(selectedCompanyId) : undefined,
+      );
+      if (!isSuperAdmin) await refreshCompanyProfile();
       setSuccess('Company profile saved successfully!');
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to save company profile.');
@@ -112,8 +147,11 @@ const CompanyProfile = () => {
     setSuccess('');
     
     try {
-      await companyProfileService.updateTemplate(templateData);
-      await refreshCompanyProfile();
+      await companyProfileService.updateTemplate(
+        templateData,
+        isSuperAdmin ? Number(selectedCompanyId) : undefined,
+      );
+      if (!isSuperAdmin) await refreshCompanyProfile();
       setSuccess('Quotation template saved successfully!');
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to save quotation template.');
@@ -138,6 +176,23 @@ const CompanyProfile = () => {
             Company Configuration
           </h1>
         </div>
+
+        {isSuperAdmin && (
+          <div className="card max-w-xl">
+            <label htmlFor="tenant-company" className="label">Configure tenant</label>
+            <select
+              id="tenant-company"
+              value={selectedCompanyId}
+              onChange={(event) => setSelectedCompanyId(event.target.value)}
+              className="input w-full"
+              disabled={tenantCompanies.length === 0}
+            >
+              {tenantCompanies.map((company) => (
+                <option key={company.id} value={company.id}>{company.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {error && <ErrorMessage message={error} onDismiss={() => setError('')} />}
         {success && (

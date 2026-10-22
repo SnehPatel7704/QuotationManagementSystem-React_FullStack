@@ -47,6 +47,11 @@ API URL. Configure `MAIL_USERNAME`, `MAIL_PASSWORD`, and optionally `MAIL_FROM`
 to enable email delivery. Production startup rejects missing CORS/frontend
 origins and short JWT secrets.
 
+When running the React development server with its `/api` proxy, keep
+`http://localhost:8080` in the development `CORS_ORIGINS` list: the proxy
+rewrites the request origin to the backend URL. Production should list only the
+actual origins from which browsers access the API.
+
 ### Step 3: Setup the Database Schema & Seed Data
 Ensure MySQL is running and the database specified in your connection string is created (or will be auto-created by Prisma). Then run:
 
@@ -58,7 +63,8 @@ cd ..
 ```
 
 The demo seed is for an empty development database only. It refuses to run in
-production or when users already exist, and it does not erase existing data.
+production or when application data already exists, and it does not erase
+existing data.
 For a production database, set `BOOTSTRAP_ADMIN_USERNAME`,
 `BOOTSTRAP_ADMIN_EMAIL`, and a unique `BOOTSTRAP_ADMIN_PASSWORD` of at least 12
 characters in `backend/.env`, then run:
@@ -99,7 +105,7 @@ Once running, open `http://localhost:3000` in your browser.
 
 ## 🔑 Default Credentials
 
-The demo seed creates the following credentials for local testing only:
+The empty-database demo seed creates the following accounts for local testing:
 
 | Role | Username | Password | Access Level |
 |------|----------|----------|--------------|
@@ -110,6 +116,13 @@ The demo seed creates the following credentials for local testing only:
 | **Beta User** | `user_beta` | `password123` | View only access |
 
 > ⚠️ **Important:** Never use demo-seed credentials in production. Use the one-time administrator bootstrap above instead.
+
+To add representative quotation states and extra sample products/clients to an
+already seeded **development** database without deleting or overwriting
+existing records, run `cd backend && npm run prisma:seed-demo`. This command
+is safe to repeat and is disabled when `NODE_ENV=production`. It also creates
+two view-only sample accounts: `demo_viewer_alpha` and `demo_viewer_beta`
+(password: `DemoUser!2026`).
 
 ---
 
@@ -130,7 +143,7 @@ The demo seed creates the following credentials for local testing only:
   - Manage companies/clients.
   - Manage product catalogs with base prices.
   - Excel import/export supports exported workbook headers, duplicate skipping, and bounded upload sizes.
-  - Super Admin workflows support selecting a tenant when managing users, clients, and products.
+  - Super Admin workflows support selecting a tenant when managing users, clients, products, and company settings.
 - **Dashboard Analytics**
   - View key metrics (Total Revenue, Approved Quotes, Win Rate).
   - Interactive charts (Revenue trends and Status distribution) using Recharts.

@@ -6,6 +6,15 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { FiSun, FiMoon, FiLogOut, FiMenu, FiChevronDown, FiUser } from 'react-icons/fi';
 
+const navigationLinks = [
+  { label: 'Dashboard', to: '/dashboard' },
+  { label: 'Quotations', to: '/quotations' },
+  { label: 'Companies', to: '/companies', roles: ['SUPERADMIN', 'ADMIN'] },
+  { label: 'Products', to: '/products', roles: ['SUPERADMIN', 'ADMIN'] },
+  { label: 'Settings', to: '/company-profile', roles: ['SUPERADMIN', 'ADMIN'] },
+  { label: 'Users', to: '/users', roles: ['SUPERADMIN', 'ADMIN'] },
+];
+
 const Header = () => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -16,6 +25,10 @@ const Header = () => {
     logout();
     navigate('/login');
   };
+
+  const visibleNavigationLinks = navigationLinks.filter(
+    ({ roles }) => !roles || roles.includes(user?.role),
+  );
 
   return (
     <header className="bg-white dark:bg-gray-800 shadow-md transition-colors duration-200 sticky top-0 z-40">
@@ -30,50 +43,15 @@ const Header = () => {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex space-x-4">
-            <Link 
-              to="/dashboard" 
-              className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            >
-              Dashboard
-            </Link>
-            <Link 
-              to="/quotations" 
-              className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            >
-              Quotations
-            </Link>
-            
-            {(user?.role === 'SUPERADMIN' || user?.role === 'ADMIN') && (
-              <>
-                <Link 
-                  to="/companies" 
-                  className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                >
-                  Companies
-                </Link>
-                <Link 
-                  to="/products" 
-                  className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                >
-                  Products
-                </Link>
-                <Link 
-                  to="/company-profile" 
-                  className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                >
-                  Settings
-                </Link>
-              </>
-            )}
-            
-            {['SUPERADMIN', 'ADMIN'].includes(user?.role) && (
-              <Link 
-                to="/users" 
+            {visibleNavigationLinks.map(({ label, to }) => (
+              <Link
+                key={to}
+                to={to}
                 className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               >
-                Users
+                {label}
               </Link>
-            )}
+            ))}
           </nav>
 
           {/* Right side - User info and actions */}
@@ -157,56 +135,16 @@ const Header = () => {
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
           <div className="md:hidden pb-4 space-y-2">
-            <Link 
-              to="/dashboard" 
-              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              Dashboard
-            </Link>
-            <Link 
-              to="/quotations" 
-              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              Quotations
-            </Link>
-            
-            {(user?.role === 'SUPERADMIN' || user?.role === 'ADMIN') && (
-              <>
-                <Link 
-                  to="/companies" 
-                  className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Companies
-                </Link>
-                <Link 
-                  to="/products" 
-                  className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Products
-                </Link>
-                <Link 
-                  to="/company-profile" 
-                  className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Settings
-                </Link>
-              </>
-            )}
-            
-            {['SUPERADMIN', 'ADMIN'].includes(user?.role) && (
-              <Link 
-                to="/users" 
+            {visibleNavigationLinks.map(({ label, to }) => (
+              <Link
+                key={to}
+                to={to}
                 className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                Users
+                {label}
               </Link>
-            )}
+            ))}
             
             <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
               <p className="px-3 text-sm font-medium text-gray-700 dark:text-gray-300">

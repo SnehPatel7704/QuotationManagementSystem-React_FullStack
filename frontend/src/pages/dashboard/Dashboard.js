@@ -73,8 +73,8 @@ const Dashboard = () => {
       icon: FiUsers,
       link: '/users',
       color: 'bg-red-500',
-      description: 'Manage system users',
-      show: user?.role === 'SUPERADMIN',
+      description: 'Manage company users',
+      show: user?.role === 'SUPERADMIN' || user?.role === 'ADMIN',
     },
   ];
 
